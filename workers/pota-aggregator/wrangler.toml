@@ -1,0 +1,18 @@
+name = "pota-aggregator"
+main = "src/index.ts"
+compatibility_date = "2024-12-18"
+compatibility_flags = ["nodejs_compat"]
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "pota-data"
+
+# Scheduled aggregation triggers (all times UTC)
+# - Hourly: 5 minutes past each hour (aggregate previous hour)
+# - Daily: 00:15 each day (aggregate previous day)
+# - Monthly: 00:30 on 1st of month (aggregate previous month)
+[triggers]
+crons = ["5 * * * *", "15 0 * * *", "30 0 1 * *"]
+
+[observability]
+enabled = true

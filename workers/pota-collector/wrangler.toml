@@ -1,0 +1,14 @@
+name = "pota-collector"
+main = "src/index.ts"
+compatibility_date = "2024-12-18"
+compatibility_flags = ["nodejs_compat"]
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "pota-data"
+
+[triggers]
+crons = ["* * * * *"]
+
+[observability]
+enabled = true

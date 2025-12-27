@@ -1,0 +1,9 @@
+node_modules/
+.wrangler/
+dist/
+*.log
+.DS_Store
+
+# Test data
+raw/
+workers/*/raw/
