@@ -36,6 +36,7 @@ export interface DuckDBInstance {
 }
 
 export async function initDuckDB(): Promise<DuckDBInstance> {
+  // @ts-expect-error - Dynamic import from CDN, runs in browser only
   const duckdb = await import('https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm');
 
   const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();

@@ -4,7 +4,7 @@ Parks on the Air (POTA) statistics collection, aggregation, and querying library
 
 ## Overview
 
-This library provides:
+This monorepo provides:
 
 - **Cloudflare Workers** for collecting and aggregating POTA spot data
 - **TypeScript modules** for querying aggregated data using DuckDB WASM
@@ -14,15 +14,55 @@ This library provides:
 
 ```
 pota-stats/
-├── src/                    # Shared TypeScript modules
-│   ├── types.ts           # Type definitions
-│   ├── constants.ts       # Band order, time ranges
-│   ├── queries.ts         # DuckDB query functions
-│   ├── data.ts            # Data loading and manifest handling
-│   └── index.ts           # Barrel exports
-└── workers/
-    ├── pota-collector/    # Collects raw spot data from POTA API
-    └── pota-aggregator/   # Aggregates data (hourly, daily, monthly)
+├── packages/
+│   └── shared/              # Shared TypeScript modules
+│       └── src/
+│           ├── types.ts     # Type definitions
+│           ├── constants.ts # Band order, time ranges
+│           ├── queries.ts   # DuckDB query functions
+│           ├── data.ts      # Data loading and manifest handling
+│           └── index.ts     # Barrel exports
+├── workers/
+│   ├── pota-collector/      # Collects raw spot data from POTA API
+│   └── pota-aggregator/     # Aggregates data (hourly, daily, monthly)
+├── common/
+│   └── config/rush/         # Rush configuration
+├── rush.json                # Rush monorepo config
+└── pnpm-workspace.yaml      # pnpm workspace config
+```
+
+## Getting Started
+
+This project uses [Rush](https://rushjs.io/) with pnpm for monorepo management.
+
+### Prerequisites
+
+- Node.js >= 18
+- Install Rush globally: `npm install -g @microsoft/rush`
+
+### Installation
+
+```bash
+rush update
+```
+
+### Building
+
+```bash
+rush build
+```
+
+### Deploying Workers
+
+```bash
+# Deploy collector
+rush deploy:collector
+
+# Deploy aggregator
+rush deploy:aggregator
+
+# Deploy all
+rush deploy:all
 ```
 
 ## Workers
@@ -49,7 +89,7 @@ import {
   getStats,
   getModeData,
   getBandData,
-} from 'pota-stats';
+} from '@pota-stats/shared';
 
 // Initialize DuckDB WASM
 const { db, conn } = await initDuckDB();

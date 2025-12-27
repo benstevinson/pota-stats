@@ -1,0 +1,43 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/rush/v5/command-line.schema.json",
+  "commands": [
+    {
+      "name": "build",
+      "commandKind": "bulk",
+      "summary": "Build all projects",
+      "description": "Build all projects that have a build script",
+      "enableParallelism": true,
+      "ignoreDependencyOrder": false,
+      "ignoreMissingScript": true,
+      "allowWarningsInSuccessfulBuild": true
+    },
+    {
+      "name": "lint",
+      "commandKind": "bulk",
+      "summary": "Lint all projects",
+      "description": "Run linting on all projects",
+      "enableParallelism": true,
+      "ignoreDependencyOrder": true,
+      "ignoreMissingScript": true
+    },
+    {
+      "name": "deploy:collector",
+      "commandKind": "global",
+      "summary": "Deploy pota-collector worker",
+      "shellCommand": "cd workers/pota-collector && pnpm deploy"
+    },
+    {
+      "name": "deploy:aggregator",
+      "commandKind": "global",
+      "summary": "Deploy pota-aggregator worker",
+      "shellCommand": "cd workers/pota-aggregator && pnpm deploy"
+    },
+    {
+      "name": "deploy:all",
+      "commandKind": "global",
+      "summary": "Deploy all workers",
+      "shellCommand": "rush deploy:collector && rush deploy:aggregator"
+    }
+  ],
+  "parameters": []
+}

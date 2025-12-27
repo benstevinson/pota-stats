@@ -4,6 +4,18 @@ dist/
 *.log
 .DS_Store
 
+# Rush
+common/temp/
+common/autoinstallers/*/node_modules/
+.rush/
+
+# pnpm
+.pnpm-store/
+
+# Package lock files in subprojects (Rush manages lockfile centrally)
+**/package-lock.json
+**/yarn.lock
+
 # Test data
 raw/
 workers/*/raw/

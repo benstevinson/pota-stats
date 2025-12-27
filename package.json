@@ -1,20 +1,8 @@
 {
-  "name": "pota-stats",
+  "name": "pota-stats-monorepo",
   "version": "0.1.0",
-  "description": "Parks on the Air (POTA) statistics collection, aggregation, and querying",
-  "type": "module",
-  "main": "src/index.ts",
-  "exports": {
-    ".": "./src/index.ts",
-    "./types": "./src/types.ts",
-    "./queries": "./src/queries.ts",
-    "./data": "./src/data.ts",
-    "./constants": "./src/constants.ts"
-  },
-  "files": [
-    "src",
-    "workers"
-  ],
+  "private": true,
+  "description": "Parks on the Air (POTA) statistics collection, aggregation, and querying - Rush monorepo",
   "keywords": [
     "pota",
     "amateur-radio",
