@@ -17,10 +17,24 @@
   ],
   "scripts": {
     "build": "tsc --noEmit",
+    "test": "ava",
     "lint": "eslint src/"
   },
   "devDependencies": {
+    "ava": "^6.2.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.9.3"
+  },
+  "ava": {
+    "extensions": {
+      "ts": "module"
+    },
+    "nodeArguments": [
+      "--import=tsx"
+    ],
+    "files": [
+      "test/**/*.test.ts"
+    ]
   },
   "keywords": [
     "pota",

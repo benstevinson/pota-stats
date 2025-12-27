@@ -1,5 +1,5 @@
-import type { Manifest, TimeRange, HourlyManifestEntry } from './types';
-import { TIME_RANGE_HOURS } from './constants';
+import type { Manifest, TimeRange, HourlyManifestEntry } from './types.ts';
+import { TIME_RANGE_HOURS } from './constants.ts';
 
 export type RollupLevel = 'hourly' | 'daily';
 

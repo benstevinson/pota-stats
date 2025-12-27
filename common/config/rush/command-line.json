@@ -12,6 +12,16 @@
       "allowWarningsInSuccessfulBuild": true
     },
     {
+      "name": "test",
+      "commandKind": "bulk",
+      "summary": "Run tests for all projects",
+      "description": "Run Ava tests for all projects that have a test script",
+      "enableParallelism": true,
+      "ignoreDependencyOrder": true,
+      "ignoreMissingScript": true,
+      "allowWarningsInSuccessfulBuild": false
+    },
+    {
       "name": "lint",
       "commandKind": "bulk",
       "summary": "Lint all projects",
