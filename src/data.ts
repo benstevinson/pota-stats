@@ -139,9 +139,15 @@ export function filterManifestByTimeRangeWithLevel(
   }
 
   // Hourly rollup
+  // Compare hour END time (start + 1 hour) against cutoff, since hourly files
+  // contain data for the full hour (e.g., 13:00 file has data from 13:00-13:59)
   const hourly = getHourlyEntries(manifest);
   const urls = hourly
-    .filter(h => new Date(h.hour) >= cutoff)
+    .filter(h => {
+      const hourEnd = new Date(h.hour);
+      hourEnd.setUTCHours(hourEnd.getUTCHours() + 1);
+      return hourEnd > cutoff;
+    })
     .map(h => `${baseUrl}/${h.path}`);
 
   return { urls, rollupLevel };
