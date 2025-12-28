@@ -17,7 +17,7 @@
   ],
   "scripts": {
     "build": "tsc --noEmit",
-    "test": "ava",
+    "test": "NODE_OPTIONS='--import tsx' ava",
     "lint": "eslint src/"
   },
   "devDependencies": {
@@ -32,9 +32,6 @@
     "extensions": {
       "ts": "module"
     },
-    "nodeArguments": [
-      "--import=tsx"
-    ],
     "files": [
       "test/**/*.test.ts"
     ]
