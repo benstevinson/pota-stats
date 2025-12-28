@@ -382,6 +382,8 @@ async function storeAggregate(
     await r2.put(key, ndjson, {
       httpMetadata: {
         contentType: 'application/x-ndjson',
+        // Aggregated files are immutable - cache forever
+        cacheControl: 'public, max-age=31536000, immutable',
       },
       customMetadata: metadata,
     });
@@ -403,6 +405,8 @@ async function storeMeta(
     await r2.put(key, JSON.stringify(meta), {
       httpMetadata: {
         contentType: 'application/json',
+        // Meta files are immutable - cache forever
+        cacheControl: 'public, max-age=31536000, immutable',
       },
     });
     return ok(undefined);
