@@ -17,7 +17,7 @@
   ],
   "scripts": {
     "build": "tsc --noEmit",
-    "test": "ava",
+    "test": "node --import tsx node_modules/ava/entrypoints/cli.mjs",
     "lint": "eslint src/"
   },
   "devDependencies": {
