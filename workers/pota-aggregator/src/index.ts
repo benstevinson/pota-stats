@@ -368,6 +368,24 @@ function aggregateSpotsToHourly(spots: NormalizedSpot[], hour: string): HourlyAg
     }));
 }
 
+// Compute short content hash for cache-busting filenames
+async function computeContentHash(content: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(content);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  // Return first 8 characters for a short but unique hash
+  return hashHex.slice(0, 8);
+}
+
+// Insert hash into filename: "hourly/2025/12/27/20.ndjson" -> "hourly/2025/12/27/20-abc12345.ndjson"
+function addHashToFilename(key: string, hash: string): string {
+  const lastDot = key.lastIndexOf('.');
+  if (lastDot === -1) return `${key}-${hash}`;
+  return `${key.slice(0, lastDot)}-${hash}${key.slice(lastDot)}`;
+}
+
 // Storage helpers
 async function storeAggregate(
   r2: R2Bucket,
@@ -378,8 +396,12 @@ async function storeAggregate(
   const lines = aggregates.map((agg) => JSON.stringify(agg));
   const ndjson = lines.join('\n');
 
+  // Compute content hash and add to filename for cache-busting
+  const hash = await computeContentHash(ndjson);
+  const hashedKey = addHashToFilename(key, hash);
+
   try {
-    await r2.put(key, ndjson, {
+    await r2.put(hashedKey, ndjson, {
       httpMetadata: {
         contentType: 'application/x-ndjson',
         // Aggregated files are immutable - cache forever
@@ -387,7 +409,7 @@ async function storeAggregate(
       },
       customMetadata: metadata,
     });
-    return ok(key);
+    return ok(hashedKey);
   } catch (error) {
     return err({
       type: 'STORAGE_ERROR',
@@ -638,6 +660,7 @@ async function aggregateHour(
   if (storeResult.isErr()) {
     return err(storeResult.error);
   }
+  const storedPath = storeResult.value;
 
   await storeMeta(r2, `hourly/${hourPath}.meta.json`, {
     hour: summary.hour,
@@ -654,7 +677,7 @@ async function aggregateHour(
     r2,
     'hourly',
     hourTimestamp,
-    `hourly/${hourPath}.ndjson`,
+    storedPath,
     summary.total_spots,
     summary.total_activations,
     720
@@ -750,6 +773,7 @@ async function aggregateDay(
   if (storeResult.isErr()) {
     return err(storeResult.error);
   }
+  const storedPath = storeResult.value;
 
   await storeMeta(r2, `daily/${dayPath}.meta.json`, {
     date: summary.date,
@@ -766,7 +790,7 @@ async function aggregateDay(
     r2,
     'daily',
     dayTimestamp,
-    `daily/${dayPath}.ndjson`,
+    storedPath,
     summary.total_spots,
     summary.total_activations,
     90
@@ -862,6 +886,7 @@ async function aggregateMonth(
   if (storeResult.isErr()) {
     return err(storeResult.error);
   }
+  const storedPath = storeResult.value;
 
   await storeMeta(r2, `monthly/${monthPath}.meta.json`, {
     month: summary.month,
@@ -878,7 +903,7 @@ async function aggregateMonth(
     r2,
     'monthly',
     monthTimestamp,
-    `monthly/${monthPath}.ndjson`,
+    storedPath,
     summary.total_spots,
     summary.total_activations,
     24
