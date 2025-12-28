@@ -5,11 +5,10 @@ import { TIME_RANGE_HOURS } from './constants.ts';
  * Converts a trend period to an equivalent time range for data loading
  */
 export function getTrendTimeRange(period: TrendPeriod): TimeRange {
-  // Map trend periods to time ranges that will load enough data
   switch (period) {
-    case 'daily': return '30d';   // 14 days needs 30d range
-    case 'weekly': return '30d';  // 14 weeks - use 30d and let query limit
-    case 'monthly': return '30d'; // 12 months - use 30d and let query limit
+    case 'daily': return '30d';
+    case 'weekly': return '30d';
+    case 'monthly': return '30d';
     default: return '30d';
   }
 }
@@ -137,12 +136,18 @@ export function filterManifestByTimeRange(
   return result.urls;
 }
 
+export interface FilterManifestOptions {
+  forceHourly?: boolean;
+}
+
 export function filterManifestByTimeRangeWithLevel(
   manifest: Manifest,
   timeRange: TimeRange,
-  baseUrl: string
+  baseUrl: string,
+  options: FilterManifestOptions = {}
 ): FilteredManifestResult {
-  const rollupLevel = selectRollupLevel(manifest, timeRange);
+  // Force hourly rollup if requested (needed for trend queries that use 'hour' column)
+  const rollupLevel = options.forceHourly ? 'hourly' : selectRollupLevel(manifest, timeRange);
   const hoursBack = TIME_RANGE_HOURS[timeRange] ?? 24;
   const cutoff = new Date();
   cutoff.setUTCHours(cutoff.getUTCHours() - hoursBack);

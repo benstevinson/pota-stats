@@ -44,4 +44,4 @@ export {
   loadDataIntoView,
   getTrendTimeRange,
 } from './data';
-export type { DuckDBInstance, LoadedData, FilteredManifestResult, RollupLevel } from './data';
+export type { DuckDBInstance, LoadedData, FilteredManifestResult, RollupLevel, FilterManifestOptions } from './data';
