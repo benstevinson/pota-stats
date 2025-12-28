@@ -1,5 +1,7 @@
 import test from 'ava';
 import {
+  computeContentHash,
+  addHashToFilename,
   formatHourPath,
   formatDayPath,
   formatMonthPath,
@@ -12,6 +14,63 @@ import {
   type HourlyAggregate,
   type AggregateGroup,
 } from '../src/utils.ts';
+
+// computeContentHash tests
+test('computeContentHash returns 8 character hex string', async t => {
+  const hash = await computeContentHash('test content');
+  t.is(hash.length, 8);
+  t.regex(hash, /^[0-9a-f]{8}$/);
+});
+
+test('computeContentHash returns same hash for same content', async t => {
+  const hash1 = await computeContentHash('hello world');
+  const hash2 = await computeContentHash('hello world');
+  t.is(hash1, hash2);
+});
+
+test('computeContentHash returns different hash for different content', async t => {
+  const hash1 = await computeContentHash('content A');
+  const hash2 = await computeContentHash('content B');
+  t.not(hash1, hash2);
+});
+
+test('computeContentHash handles empty string', async t => {
+  const hash = await computeContentHash('');
+  t.is(hash.length, 8);
+  t.regex(hash, /^[0-9a-f]{8}$/);
+});
+
+test('computeContentHash handles JSON content', async t => {
+  const json = JSON.stringify({ mode: 'SSB', band: '40m', spot_count: 5 });
+  const hash = await computeContentHash(json);
+  t.is(hash.length, 8);
+});
+
+// addHashToFilename tests
+test('addHashToFilename inserts hash before extension', t => {
+  const result = addHashToFilename('hourly/2025/12/27/20.ndjson', 'abc12345');
+  t.is(result, 'hourly/2025/12/27/20-abc12345.ndjson');
+});
+
+test('addHashToFilename handles daily path', t => {
+  const result = addHashToFilename('daily/2025/12/27.ndjson', 'def67890');
+  t.is(result, 'daily/2025/12/27-def67890.ndjson');
+});
+
+test('addHashToFilename handles monthly path', t => {
+  const result = addHashToFilename('monthly/2025/12.ndjson', '11223344');
+  t.is(result, 'monthly/2025/12-11223344.ndjson');
+});
+
+test('addHashToFilename handles filename without extension', t => {
+  const result = addHashToFilename('somefile', 'abc12345');
+  t.is(result, 'somefile-abc12345');
+});
+
+test('addHashToFilename handles multiple dots in path', t => {
+  const result = addHashToFilename('path/to/file.test.ndjson', 'abc12345');
+  t.is(result, 'path/to/file.test-abc12345.ndjson');
+});
 
 // formatHourPath tests
 test('formatHourPath formats date correctly', t => {

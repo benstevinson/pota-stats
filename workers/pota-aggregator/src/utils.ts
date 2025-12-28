@@ -1,5 +1,23 @@
 // Utility functions extracted for testing
 
+// Compute short content hash for cache-busting filenames
+export async function computeContentHash(content: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(content);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  // Return first 8 characters for a short but unique hash
+  return hashHex.slice(0, 8);
+}
+
+// Insert hash into filename: "hourly/2025/12/27/20.ndjson" -> "hourly/2025/12/27/20-abc12345.ndjson"
+export function addHashToFilename(key: string, hash: string): string {
+  const lastDot = key.lastIndexOf('.');
+  if (lastDot === -1) return `${key}-${hash}`;
+  return `${key.slice(0, lastDot)}-${hash}${key.slice(lastDot)}`;
+}
+
 export function formatHourPath(date: Date): string {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');

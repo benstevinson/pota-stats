@@ -1,4 +1,5 @@
 import { Result, ok, err } from 'neverthrow';
+import { computeContentHash, addHashToFilename } from './utils.js';
 
 interface NormalizedSpot {
   ts: string;
@@ -366,24 +367,6 @@ function aggregateSpotsToHourly(spots: NormalizedSpot[], hour: string): HourlyAg
       activations: Array.from(group.activations),
       state_activators: Array.from(group.stateActivators),
     }));
-}
-
-// Compute short content hash for cache-busting filenames
-async function computeContentHash(content: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(content);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  // Return first 8 characters for a short but unique hash
-  return hashHex.slice(0, 8);
-}
-
-// Insert hash into filename: "hourly/2025/12/27/20.ndjson" -> "hourly/2025/12/27/20-abc12345.ndjson"
-function addHashToFilename(key: string, hash: string): string {
-  const lastDot = key.lastIndexOf('.');
-  if (lastDot === -1) return `${key}-${hash}`;
-  return `${key.slice(0, lastDot)}-${hash}${key.slice(lastDot)}`;
 }
 
 // Storage helpers
