@@ -1,13 +1,6 @@
 import type { Manifest, TimeRange, TrendPeriod, HourlyManifestEntry } from './types.ts';
 import { TIME_RANGE_HOURS } from './constants.ts';
 
-// Hours of data needed for each trend period
-const TREND_PERIOD_HOURS: Record<TrendPeriod, number> = {
-  daily: 14 * 24,     // 14 days
-  weekly: 14 * 7 * 24, // 14 weeks
-  monthly: 12 * 30 * 24, // ~12 months
-};
-
 /**
  * Converts a trend period to an equivalent time range for data loading
  */
