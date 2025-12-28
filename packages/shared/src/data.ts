@@ -69,20 +69,24 @@ export async function initDuckDB(): Promise<DuckDBInstance> {
   const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
 
   // Fetch and cache the WASM module and worker in parallel
-  const [mainModuleBuffer, mainWorkerBlob] = await Promise.all([
-    getCachedArrayBuffer(bundle.mainModule, DUCKDB_CACHE_KEY),
+  const [mainModuleBlob, mainWorkerBlob] = await Promise.all([
+    getCachedBlob(bundle.mainModule, DUCKDB_CACHE_KEY, 'application/wasm'),
     getCachedBlob(bundle.mainWorker, DUCKDB_CACHE_KEY, 'application/javascript'),
   ]);
 
-  // Create worker from cached blob
+  // Create blob URLs for both - DuckDB internally needs URLs it can fetch from
+  const wasmUrl = URL.createObjectURL(mainModuleBlob);
   const workerUrl = URL.createObjectURL(mainWorkerBlob);
+
   const worker = new Worker(workerUrl);
   const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING);
   const db = new duckdb.AsyncDuckDB(logger, worker);
 
-  // Compile WASM buffer to module, then instantiate
-  const wasmModule = await WebAssembly.compile(mainModuleBuffer);
-  await db.instantiate(wasmModule);
+  // Pass the blob URL - DuckDB fetches from memory via the blob URL
+  await db.instantiate(wasmUrl);
+
+  // Clean up blob URLs after instantiation
+  URL.revokeObjectURL(wasmUrl);
   URL.revokeObjectURL(workerUrl);
 
   const conn = await db.connect();
