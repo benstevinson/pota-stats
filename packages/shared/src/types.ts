@@ -3,7 +3,6 @@ export interface PotaStats {
   totalActivations: number;
   uniqueActivators: number;
   uniqueParks: number;
-  topMode: string | null;
 }
 
 export interface ModeData {
@@ -68,4 +67,14 @@ export interface ActivatorByModeTrendData {
   cw: number;
   ssb: number;
   digital: number;
+}
+
+export interface TopParkData {
+  reference: string;
+  uniqueActivators: number;
+}
+
+export interface TopStateData {
+  state: string;
+  uniqueActivators: number;
 }

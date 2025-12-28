@@ -1,4 +1,4 @@
-import type { PotaStats, ModeData, BandData, CategoryBreakdown, GroupBy, TrendPeriod, ActivatorTrendData, ActivatorByModeTrendData } from './types';
+import type { PotaStats, ModeData, BandData, CategoryBreakdown, GroupBy, TrendPeriod, ActivatorTrendData, ActivatorByModeTrendData, TopParkData, TopStateData } from './types.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AsyncDuckDBConnection = any;
@@ -15,18 +15,11 @@ async function queryAll<T>(conn: AsyncDuckDBConnection, sql: string): Promise<T[
 }
 
 export async function getStats(conn: AsyncDuckDBConnection): Promise<PotaStats> {
-  const [spots, activators, parks, activations, topMode] = await Promise.all([
+  const [spots, activators, parks, activations] = await Promise.all([
     queryOne<{ total: number }>(conn, `SELECT SUM(spot_count) as total FROM spots`),
     queryOne<{ total: number }>(conn, `SELECT COUNT(DISTINCT activator) as total FROM spots, UNNEST(activators) as t(activator)`),
     queryOne<{ total: number }>(conn, `SELECT COUNT(DISTINCT park) as total FROM spots, UNNEST(parks) as t(park)`),
     queryOne<{ total: number }>(conn, `SELECT COUNT(DISTINCT activation) as total FROM spots, UNNEST(activations) as t(activation)`),
-    queryOne<{ mode: string }>(conn, `
-      SELECT mode
-      FROM spots
-      GROUP BY mode
-      ORDER BY SUM(spot_count) DESC
-      LIMIT 1
-    `),
   ]);
 
   return {
@@ -34,7 +27,6 @@ export async function getStats(conn: AsyncDuckDBConnection): Promise<PotaStats> 
     totalActivations: Number(activations?.total ?? 0),
     uniqueActivators: Number(activators?.total ?? 0),
     uniqueParks: Number(parks?.total ?? 0),
-    topMode: topMode?.mode ?? null,
   };
 }
 
@@ -243,4 +235,61 @@ export async function getActivatorByModeTrend(
 
   const results = await queryAll<ActivatorByModeTrendData>(conn, sql);
   return results.reverse();
+}
+
+export async function getTopParks(
+  conn: AsyncDuckDBConnection,
+  limit: number = 10
+): Promise<TopParkData[]> {
+  // Data is already time-filtered when loaded via loadDataIntoView
+  // Parse activations array ("CALLSIGN|PARK" format) to count unique activators per park
+  const sql = `
+    WITH park_activators AS (
+      SELECT
+        SPLIT_PART(activation, '|', 2) as reference,
+        SPLIT_PART(activation, '|', 1) as activator
+      FROM spots, UNNEST(activations) as t(activation)
+    )
+    SELECT reference, COUNT(DISTINCT activator)::INTEGER as uniqueActivators
+    FROM park_activators
+    WHERE reference IS NOT NULL AND reference != ''
+    GROUP BY reference
+    ORDER BY uniqueActivators DESC
+    LIMIT ${limit}
+  `;
+
+  try {
+    return await queryAll<TopParkData>(conn, sql);
+  } catch {
+    return [];
+  }
+}
+
+export async function getTopStates(
+  conn: AsyncDuckDBConnection,
+  limit: number = 10
+): Promise<TopStateData[]> {
+  // Data is already time-filtered when loaded via loadDataIntoView
+  // Query state_activators from aggregated data (column may not exist in old data)
+  const sql = `
+    WITH state_data AS (
+      SELECT
+        SPLIT_PART(state_activator, '|', 1) as state,
+        SPLIT_PART(state_activator, '|', 2) as activator
+      FROM spots, UNNEST(state_activators) as t(state_activator)
+    )
+    SELECT state, COUNT(DISTINCT activator)::INTEGER as uniqueActivators
+    FROM state_data
+    WHERE state IS NOT NULL AND state != ''
+    GROUP BY state
+    ORDER BY uniqueActivators DESC
+    LIMIT ${limit}
+  `;
+
+  try {
+    return await queryAll<TopStateData>(conn, sql);
+  } catch {
+    // state_activators column may not exist in older aggregated data
+    return [];
+  }
 }

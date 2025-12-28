@@ -15,6 +15,7 @@ interface NormalizedSpot {
   lon: number;
   name: string;
   spotter: string;
+  state: string | null;
 }
 
 // Base aggregate structure - used at hourly, daily, and monthly levels
@@ -29,6 +30,7 @@ interface BaseAggregate {
   activators: string[];
   parks: string[];
   activations: string[];
+  state_activators: string[]; // Format: "STATE|CALLSIGN" for US state tracking
 }
 
 interface HourlyAggregate extends BaseAggregate {
@@ -244,6 +246,7 @@ interface AggregateGroup {
   activators: Set<string>;
   parks: Set<string>;
   activations: Set<string>;
+  stateActivators: Set<string>;
 }
 
 function mergeAggregatesIntoGroups<T extends BaseAggregate>(
@@ -258,12 +261,15 @@ function mergeAggregatesIntoGroups<T extends BaseAggregate>(
       activators: new Set<string>(),
       parks: new Set<string>(),
       activations: new Set<string>(),
+      stateActivators: new Set<string>(),
     };
 
     group.spotCount += agg.spot_count;
     agg.activators.forEach((a) => group.activators.add(a));
     agg.parks.forEach((p) => group.parks.add(p));
     agg.activations.forEach((act) => group.activations.add(act));
+    // Handle state_activators (may be undefined for older data)
+    (agg.state_activators ?? []).forEach((sa) => group.stateActivators.add(sa));
 
     if (!existing) {
       groups.set(key, group);
@@ -297,6 +303,7 @@ function groupsToAggregates<T extends BaseAggregate>(
         activators: Array.from(group.activators),
         parks: Array.from(group.parks),
         activations: Array.from(group.activations),
+        state_activators: Array.from(group.stateActivators),
       };
       return aggregate as unknown as T;
     });
@@ -307,6 +314,7 @@ interface SpotGroup {
   activators: Set<string>;
   parks: Set<string>;
   activations: Set<string>;
+  stateActivators: Set<string>;
 }
 
 function aggregateSpotsToHourly(spots: NormalizedSpot[], hour: string): HourlyAggregate[] {
@@ -318,12 +326,17 @@ function aggregateSpotsToHourly(spots: NormalizedSpot[], hour: string): HourlyAg
       activators: new Set<string>(),
       parks: new Set<string>(),
       activations: new Set<string>(),
+      stateActivators: new Set<string>(),
     };
 
     group.spots.push(spot);
     group.activators.add(spot.activator);
     group.parks.add(spot.reference);
     group.activations.add(`${spot.activator}|${spot.reference}`);
+    // Track state|activator pairs for US state statistics
+    if (spot.state) {
+      group.stateActivators.add(`${spot.state}|${spot.activator}`);
+    }
 
     if (!existing) {
       acc.set(key, group);
@@ -351,6 +364,7 @@ function aggregateSpotsToHourly(spots: NormalizedSpot[], hour: string): HourlyAg
       activators: Array.from(group.activators),
       parks: Array.from(group.parks),
       activations: Array.from(group.activations),
+      state_activators: Array.from(group.stateActivators),
     }));
 }
 
@@ -400,9 +414,23 @@ async function storeMeta(
   }
 }
 
-// Manifest types and helpers
-interface ManifestEntry {
-  timestamp: string;
+// Manifest types and helpers - using time field names that match frontend types
+interface HourlyManifestEntry {
+  hour: string;
+  path: string;
+  total_spots: number;
+  total_activations: number;
+}
+
+interface DailyManifestEntry {
+  day: string;
+  path: string;
+  total_spots: number;
+  total_activations: number;
+}
+
+interface MonthlyManifestEntry {
+  month: string;
   path: string;
   total_spots: number;
   total_activations: number;
@@ -410,15 +438,48 @@ interface ManifestEntry {
 
 interface Manifest {
   updated_at: string;
-  hourly: ManifestEntry[];
-  daily: ManifestEntry[];
-  monthly: ManifestEntry[];
+  hourly: HourlyManifestEntry[];
+  daily: DailyManifestEntry[];
+  monthly: MonthlyManifestEntry[];
 }
+
+// Normalize entries to use correct field name (handle legacy 'timestamp' field)
+function normalizeHourlyEntries(entries: Array<{ hour?: string; timestamp?: string; path: string; total_spots: number; total_activations: number }>): HourlyManifestEntry[] {
+  return entries.map(e => ({
+    hour: e.hour ?? e.timestamp ?? '',
+    path: e.path,
+    total_spots: e.total_spots,
+    total_activations: e.total_activations,
+  }));
+}
+
+function normalizeDailyEntries(entries: Array<{ day?: string; timestamp?: string; path: string; total_spots: number; total_activations: number }>): DailyManifestEntry[] {
+  return entries.map(e => ({
+    day: e.day ?? e.timestamp ?? '',
+    path: e.path,
+    total_spots: e.total_spots,
+    total_activations: e.total_activations,
+  }));
+}
+
+function normalizeMonthlyEntries(entries: Array<{ month?: string; timestamp?: string; path: string; total_spots: number; total_activations: number }>): MonthlyManifestEntry[] {
+  return entries.map(e => ({
+    month: e.month ?? e.timestamp ?? '',
+    path: e.path,
+    total_spots: e.total_spots,
+    total_activations: e.total_activations,
+  }));
+}
+
+type ManifestLevel = 'hourly' | 'daily' | 'monthly';
 
 async function updateManifest(
   r2: R2Bucket,
-  level: 'hourly' | 'daily' | 'monthly',
-  newEntry: ManifestEntry,
+  level: ManifestLevel,
+  timeValue: string,
+  path: string,
+  totalSpots: number,
+  totalActivations: number,
   maxEntries: number
 ): Promise<Result<void, AggregatorError>> {
   try {
@@ -433,31 +494,53 @@ async function updateManifest(
     if (existingManifest) {
       try {
         const parsed = JSON.parse(await existingManifest.text());
-        // Handle migration from old format
+        // Handle migration from old format (hours -> hourly)
         if (parsed.hours && !parsed.hourly) {
-          manifest.hourly = parsed.hours;
+          manifest.hourly = normalizeHourlyEntries(parsed.hours);
         } else {
-          manifest = { ...manifest, ...parsed };
+          // Normalize existing arrays to ensure consistent format
+          if (parsed.hourly) manifest.hourly = normalizeHourlyEntries(parsed.hourly);
+          if (parsed.daily) manifest.daily = normalizeDailyEntries(parsed.daily);
+          if (parsed.monthly) manifest.monthly = normalizeMonthlyEntries(parsed.monthly);
         }
       } catch {
         // Invalid JSON, start fresh
       }
     }
 
-    // Update or add the entry
-    const entries = manifest[level];
-    const existingIndex = entries.findIndex((e) => e.timestamp === newEntry.timestamp);
-    if (existingIndex >= 0) {
-      entries[existingIndex] = newEntry;
-    } else {
-      entries.push(newEntry);
+    // Update or add the entry based on level
+    if (level === 'hourly') {
+      const newEntry: HourlyManifestEntry = { hour: timeValue, path, total_spots: totalSpots, total_activations: totalActivations };
+      const existingIndex = manifest.hourly.findIndex((e) => e.hour === timeValue);
+      if (existingIndex >= 0) {
+        manifest.hourly[existingIndex] = newEntry;
+      } else {
+        manifest.hourly.push(newEntry);
+      }
+      manifest.hourly.sort((a, b) => b.hour.localeCompare(a.hour));
+      manifest.hourly = manifest.hourly.slice(0, maxEntries);
+    } else if (level === 'daily') {
+      const newEntry: DailyManifestEntry = { day: timeValue, path, total_spots: totalSpots, total_activations: totalActivations };
+      const existingIndex = manifest.daily.findIndex((e) => e.day === timeValue);
+      if (existingIndex >= 0) {
+        manifest.daily[existingIndex] = newEntry;
+      } else {
+        manifest.daily.push(newEntry);
+      }
+      manifest.daily.sort((a, b) => b.day.localeCompare(a.day));
+      manifest.daily = manifest.daily.slice(0, maxEntries);
+    } else if (level === 'monthly') {
+      const newEntry: MonthlyManifestEntry = { month: timeValue, path, total_spots: totalSpots, total_activations: totalActivations };
+      const existingIndex = manifest.monthly.findIndex((e) => e.month === timeValue);
+      if (existingIndex >= 0) {
+        manifest.monthly[existingIndex] = newEntry;
+      } else {
+        manifest.monthly.push(newEntry);
+      }
+      manifest.monthly.sort((a, b) => b.month.localeCompare(a.month));
+      manifest.monthly = manifest.monthly.slice(0, maxEntries);
     }
 
-    // Sort by timestamp descending (newest first)
-    entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-
-    // Keep only max entries
-    manifest[level] = entries.slice(0, maxEntries);
     manifest.updated_at = new Date().toISOString();
 
     await r2.put('manifest.json', JSON.stringify(manifest), {
@@ -563,14 +646,15 @@ async function aggregateHour(
     aggregate_count: summary.aggregates.length,
   });
 
-  const manifestEntry: ManifestEntry = {
-    timestamp: hourTimestamp,
-    path: `hourly/${hourPath}.ndjson`,
-    total_spots: summary.total_spots,
-    total_activations: summary.total_activations,
-  };
-
-  const manifestResult = await updateManifest(r2, 'hourly', manifestEntry, 720);
+  const manifestResult = await updateManifest(
+    r2,
+    'hourly',
+    hourTimestamp,
+    `hourly/${hourPath}.ndjson`,
+    summary.total_spots,
+    summary.total_activations,
+    720
+  );
   if (manifestResult.isErr()) {
     console.warn(`Failed to update manifest: ${manifestResult.error.message}`);
   }
@@ -674,14 +758,15 @@ async function aggregateDay(
     aggregate_count: summary.aggregates.length,
   });
 
-  const manifestEntry: ManifestEntry = {
-    timestamp: dayTimestamp,
-    path: `daily/${dayPath}.ndjson`,
-    total_spots: summary.total_spots,
-    total_activations: summary.total_activations,
-  };
-
-  const manifestResult = await updateManifest(r2, 'daily', manifestEntry, 90);
+  const manifestResult = await updateManifest(
+    r2,
+    'daily',
+    dayTimestamp,
+    `daily/${dayPath}.ndjson`,
+    summary.total_spots,
+    summary.total_activations,
+    90
+  );
   if (manifestResult.isErr()) {
     console.warn(`Failed to update manifest: ${manifestResult.error.message}`);
   }
@@ -785,47 +870,20 @@ async function aggregateMonth(
     aggregate_count: summary.aggregates.length,
   });
 
-  const manifestEntry: ManifestEntry = {
-    timestamp: monthTimestamp,
-    path: `monthly/${monthPath}.ndjson`,
-    total_spots: summary.total_spots,
-    total_activations: summary.total_activations,
-  };
-
-  const manifestResult = await updateManifest(r2, 'monthly', manifestEntry, 24);
+  const manifestResult = await updateManifest(
+    r2,
+    'monthly',
+    monthTimestamp,
+    `monthly/${monthPath}.ndjson`,
+    summary.total_spots,
+    summary.total_activations,
+    24
+  );
   if (manifestResult.isErr()) {
     console.warn(`Failed to update manifest: ${manifestResult.error.message}`);
   }
 
   return ok(summary);
-}
-
-// Response helpers
-function summaryToResponse(
-  summary: HourlySummary | DailySummary | MonthlySummary,
-  timeKey: string
-): Response {
-  const timeValue = 'hour' in summary ? summary.hour : 'date' in summary ? summary.date : summary.month;
-  return new Response(
-    JSON.stringify({
-      success: true,
-      [timeKey]: timeValue,
-      total_spots: summary.total_spots,
-      total_activations: summary.total_activations,
-      total_unique_activators: summary.total_unique_activators,
-      total_unique_parks: summary.total_unique_parks,
-      files_processed: summary.files_processed,
-      aggregate_count: summary.aggregates.length,
-    }),
-    { headers: { 'Content-Type': 'application/json' } }
-  );
-}
-
-function errorToResponse(error: AggregatorError): Response {
-  return new Response(
-    JSON.stringify({ success: false, error: error.type, message: error.message }),
-    { status: 500, headers: { 'Content-Type': 'application/json' } }
-  );
 }
 
 export default {
@@ -876,9 +934,12 @@ export default {
           console.error(`[DAILY] Aggregation failed: [${error.type}] ${error.message}`);
         }
       );
-    } else if (cronName === '30 0 * * *') {
-      // Monthly aggregation - re-aggregate current month (updates as days complete)
-      const result = await aggregateMonth(env.R2, now);
+    } else if (cronName === '30 0 1 * *') {
+      // Monthly aggregation - runs on 1st of month, aggregates previous month
+      const targetMonth = new Date(now);
+      targetMonth.setUTCMonth(targetMonth.getUTCMonth() - 1);
+
+      const result = await aggregateMonth(env.R2, targetMonth);
       result.match(
         (summary) => {
           console.log(
@@ -909,110 +970,14 @@ export default {
     }
   },
 
+  // HTTP handler - health check only, aggregation is cron-triggered
   async fetch(
     request: Request,
-    env: Env,
+    _env: Env,
     _ctx: ExecutionContext
   ): Promise<Response> {
     const url = new URL(request.url);
 
-    // Hourly aggregation
-    if (url.pathname === '/aggregate' || url.pathname === '/aggregate-hour') {
-      const hourParam = url.searchParams.get('hour');
-      let targetHour: Date;
-
-      if (hourParam) {
-        targetHour = new Date(hourParam);
-        if (isNaN(targetHour.getTime())) {
-          return new Response(
-            JSON.stringify({ error: 'Invalid hour parameter' }),
-            { status: 400, headers: { 'Content-Type': 'application/json' } }
-          );
-        }
-      } else {
-        targetHour = new Date();
-        targetHour.setUTCHours(targetHour.getUTCHours() - 1);
-      }
-
-      const result = await aggregateHour(env.R2, targetHour);
-      return result.match(
-        (summary) => summaryToResponse(summary, 'hour'),
-        (error) => errorToResponse(error)
-      );
-    }
-
-    // Daily aggregation
-    if (url.pathname === '/aggregate-day') {
-      const dateParam = url.searchParams.get('date');
-      let targetDay: Date;
-
-      if (dateParam) {
-        targetDay = new Date(dateParam);
-        if (isNaN(targetDay.getTime())) {
-          return new Response(
-            JSON.stringify({ error: 'Invalid date parameter' }),
-            { status: 400, headers: { 'Content-Type': 'application/json' } }
-          );
-        }
-      } else {
-        targetDay = new Date();
-        targetDay.setUTCDate(targetDay.getUTCDate() - 1);
-      }
-
-      const result = await aggregateDay(env.R2, targetDay);
-      return result.match(
-        (summary) => summaryToResponse(summary, 'date'),
-        (error) => errorToResponse(error)
-      );
-    }
-
-    // Monthly aggregation
-    if (url.pathname === '/aggregate-month') {
-      const monthParam = url.searchParams.get('month');
-      let targetMonth: Date;
-
-      if (monthParam) {
-        // Accept YYYY-MM format
-        const parts = monthParam.split('-').map(Number);
-        const year = parts[0] ?? 0;
-        const month = parts[1] ?? 0;
-        targetMonth = new Date(Date.UTC(year, month - 1, 1));
-        if (isNaN(targetMonth.getTime()) || year === 0 || month === 0) {
-          return new Response(
-            JSON.stringify({ error: 'Invalid month parameter (use YYYY-MM)' }),
-            { status: 400, headers: { 'Content-Type': 'application/json' } }
-          );
-        }
-      } else {
-        targetMonth = new Date();
-      }
-
-      const result = await aggregateMonth(env.R2, targetMonth);
-      return result.match(
-        (summary) => summaryToResponse(summary, 'month'),
-        (error) => errorToResponse(error)
-      );
-    }
-
-    // Aggregate current hour (for testing)
-    if (url.pathname === '/aggregate-current') {
-      const result = await aggregateHour(env.R2, new Date());
-      return result.match(
-        (summary) => summaryToResponse(summary, 'hour'),
-        (error) => errorToResponse(error)
-      );
-    }
-
-    // Aggregate current day (for testing)
-    if (url.pathname === '/aggregate-current-day') {
-      const result = await aggregateDay(env.R2, new Date());
-      return result.match(
-        (summary) => summaryToResponse(summary, 'date'),
-        (error) => errorToResponse(error)
-      );
-    }
-
-    // Health check
     if (url.pathname === '/health') {
       return new Response(
         JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }),
@@ -1021,15 +986,8 @@ export default {
     }
 
     return new Response(
-      'POTA Aggregator\n' +
-      'Endpoints:\n' +
-      '  /aggregate[-hour]?hour=ISO - Aggregate hourly data\n' +
-      '  /aggregate-day?date=YYYY-MM-DD - Aggregate daily data\n' +
-      '  /aggregate-month?month=YYYY-MM - Aggregate monthly data\n' +
-      '  /aggregate-current - Aggregate current hour\n' +
-      '  /aggregate-current-day - Aggregate current day\n' +
-      '  /health - Health check',
-      { status: 200 }
+      JSON.stringify({ service: 'pota-aggregator', status: 'ok', endpoints: ['/health'] }),
+      { headers: { 'Content-Type': 'application/json' } }
     );
   },
 };

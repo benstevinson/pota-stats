@@ -13,6 +13,8 @@ export type {
   TrendPeriod,
   ActivatorTrendData,
   ActivatorByModeTrendData,
+  TopParkData,
+  TopStateData,
 } from './types';
 
 // Constants
@@ -29,6 +31,8 @@ export {
   getCategoryBreakdown,
   getActivatorTrend,
   getActivatorByModeTrend,
+  getTopParks,
+  getTopStates,
 } from './queries';
 
 // Data loading

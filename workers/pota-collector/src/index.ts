@@ -1,4 +1,6 @@
 import { Result, ok, err } from 'neverthrow';
+// @ts-expect-error - Local ESM build of coord2state
+import { getState } from './coord2state.js';
 
 // Types for POTA API response
 interface PotaSpot {
@@ -41,6 +43,7 @@ interface NormalizedSpot {
   lon: number;
   name: string;
   spotter: string;
+  state: string | null;
 }
 
 interface Env {
@@ -140,6 +143,7 @@ function normalizeSpots(spots: PotaSpot[], timestamp: string): NormalizedSpot[] 
     lon: spot.longitude,
     name: spot.name,
     spotter: spot.spotter,
+    state: getState(spot.latitude, spot.longitude) ?? null,
   }));
 }
 
@@ -207,37 +211,13 @@ export default {
     );
   },
 
-  // HTTP handler for manual testing
+  // HTTP handler - health check only, collection is cron-triggered
   async fetch(
     request: Request,
-    env: Env,
+    _env: Env,
     _ctx: ExecutionContext
   ): Promise<Response> {
     const url = new URL(request.url);
-
-    if (url.pathname === '/collect') {
-      const result = await collectSpots(env);
-
-      return result.match(
-        ({ key, count }) => {
-          return new Response(
-            JSON.stringify({ success: true, key, count }),
-            {
-              headers: { 'Content-Type': 'application/json' },
-            }
-          );
-        },
-        (error) => {
-          return new Response(
-            JSON.stringify({ success: false, error: error.type, message: error.message }),
-            {
-              status: 500,
-              headers: { 'Content-Type': 'application/json' },
-            }
-          );
-        }
-      );
-    }
 
     if (url.pathname === '/health') {
       return new Response(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }), {
@@ -245,6 +225,9 @@ export default {
       });
     }
 
-    return new Response('POTA Collector - /collect or /health', { status: 200 });
+    return new Response(
+      JSON.stringify({ service: 'pota-collector', status: 'ok', endpoints: ['/health'] }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
   },
 };

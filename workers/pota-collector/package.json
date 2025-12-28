@@ -11,6 +11,7 @@
     "test": "ava"
   },
   "dependencies": {
+    "coord2state": "^1.0.1",
     "neverthrow": "^8.2.0"
   },
   "devDependencies": {
