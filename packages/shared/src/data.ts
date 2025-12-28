@@ -1,5 +1,25 @@
-import type { Manifest, TimeRange, HourlyManifestEntry } from './types.ts';
+import type { Manifest, TimeRange, TrendPeriod, HourlyManifestEntry } from './types.ts';
 import { TIME_RANGE_HOURS } from './constants.ts';
+
+// Hours of data needed for each trend period
+const TREND_PERIOD_HOURS: Record<TrendPeriod, number> = {
+  daily: 14 * 24,     // 14 days
+  weekly: 14 * 7 * 24, // 14 weeks
+  monthly: 12 * 30 * 24, // ~12 months
+};
+
+/**
+ * Converts a trend period to an equivalent time range for data loading
+ */
+export function getTrendTimeRange(period: TrendPeriod): TimeRange {
+  // Map trend periods to time ranges that will load enough data
+  switch (period) {
+    case 'daily': return '30d';   // 14 days needs 30d range
+    case 'weekly': return '30d';  // 14 weeks - use 30d and let query limit
+    case 'monthly': return '30d'; // 12 months - use 30d and let query limit
+    default: return '30d';
+  }
+}
 
 export type RollupLevel = 'hourly' | 'daily';
 
@@ -10,24 +30,30 @@ type AsyncDuckDBConnection = any;
 
 const DUCKDB_CACHE_KEY = 'duckdb-wasm-1.29.0';
 
-async function getCachedBundle(url: string, cacheName: string): Promise<Response> {
+async function getCachedArrayBuffer(url: string, cacheName: string): Promise<ArrayBuffer> {
   try {
     const cache = await caches.open(cacheName);
     const cached = await cache.match(url);
     if (cached) {
-      console.log(`Cache hit: ${url}`);
-      return cached;
+      console.log(`DuckDB cache hit: ${url.split('/').pop()}`);
+      return cached.arrayBuffer();
     }
-    console.log(`Cache miss, fetching: ${url}`);
+    console.log(`DuckDB cache miss, fetching: ${url.split('/').pop()}`);
     const response = await fetch(url);
     if (response.ok) {
       cache.put(url, response.clone());
     }
-    return response;
+    return response.arrayBuffer();
   } catch {
     console.warn('Cache API not available, fetching directly');
-    return fetch(url);
+    const response = await fetch(url);
+    return response.arrayBuffer();
   }
+}
+
+async function getCachedBlob(url: string, cacheName: string, mimeType: string): Promise<Blob> {
+  const buffer = await getCachedArrayBuffer(url, cacheName);
+  return new Blob([buffer], { type: mimeType });
 }
 
 export interface DuckDBInstance {
@@ -42,21 +68,21 @@ export async function initDuckDB(): Promise<DuckDBInstance> {
   const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
   const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
 
-  await Promise.all([
-    getCachedBundle(bundle.mainModule, DUCKDB_CACHE_KEY),
-    getCachedBundle(bundle.mainWorker, DUCKDB_CACHE_KEY),
+  // Fetch and cache the WASM module and worker in parallel
+  const [mainModuleBuffer, mainWorkerBlob] = await Promise.all([
+    getCachedArrayBuffer(bundle.mainModule, DUCKDB_CACHE_KEY),
+    getCachedBlob(bundle.mainWorker, DUCKDB_CACHE_KEY, 'application/javascript'),
   ]);
 
-  const worker_url = URL.createObjectURL(
-    new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
-  );
-
-  const worker = new Worker(worker_url);
+  // Create worker from cached blob
+  const workerUrl = URL.createObjectURL(mainWorkerBlob);
+  const worker = new Worker(workerUrl);
   const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING);
   const db = new duckdb.AsyncDuckDB(logger, worker);
 
-  await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-  URL.revokeObjectURL(worker_url);
+  // Instantiate with cached WASM buffer
+  await db.instantiate(mainModuleBuffer);
+  URL.revokeObjectURL(workerUrl);
 
   const conn = await db.connect();
 
@@ -161,7 +187,8 @@ export interface LoadedData {
 export async function loadDataIntoView(
   db: AsyncDuckDB,
   conn: AsyncDuckDBConnection,
-  urls: string[]
+  urls: string[],
+  viewName: string = 'spots'
 ): Promise<LoadedData> {
   // Fetch all files in parallel
   const fetchPromises = urls.map(async (url, idx) => {
@@ -182,10 +209,12 @@ export async function loadDataIntoView(
     throw new Error('No data files could be loaded');
   }
 
+  const fileName = `${viewName}_data.ndjson`;
+
   // Clean up previous data
-  await conn.query(`DROP VIEW IF EXISTS spots`);
+  await conn.query(`DROP VIEW IF EXISTS ${viewName}`);
   try {
-    await db.dropFile('combined_data.ndjson');
+    await db.dropFile(fileName);
   } catch {
     // File may not exist on first load
   }
@@ -195,10 +224,10 @@ export async function loadDataIntoView(
   const encoder = new TextEncoder();
   const dataBuffer = encoder.encode(combinedData);
 
-  await db.registerFileBuffer('combined_data.ndjson', dataBuffer);
+  await db.registerFileBuffer(fileName, dataBuffer);
   await conn.query(`
-    CREATE VIEW spots AS
-    SELECT * FROM read_ndjson_auto('combined_data.ndjson')
+    CREATE VIEW ${viewName} AS
+    SELECT * FROM read_ndjson_auto('${fileName}')
   `);
 
   return { fileCount: files.length };

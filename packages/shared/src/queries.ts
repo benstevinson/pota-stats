@@ -151,7 +151,8 @@ const PERIOD_CONFIGS: Record<TrendPeriod, { truncate: string; limit: number; for
 
 export async function getActivatorTrend(
   conn: AsyncDuckDBConnection,
-  period: TrendPeriod
+  period: TrendPeriod,
+  viewName: string = 'spots'
 ): Promise<ActivatorTrendData[]> {
   const config = PERIOD_CONFIGS[period];
   const sql = `
@@ -159,7 +160,7 @@ export async function getActivatorTrend(
       SELECT
         DATE_TRUNC('${config.truncate}', hour::TIMESTAMP) as period,
         activator
-      FROM spots, UNNEST(activators) as t(activator)
+      FROM ${viewName}, UNNEST(activators) as t(activator)
     )
     SELECT
       strftime(period, '${config.format}') as period,
@@ -182,7 +183,8 @@ const MODE_CATEGORIES = {
 
 export async function getActivatorByModeTrend(
   conn: AsyncDuckDBConnection,
-  period: TrendPeriod
+  period: TrendPeriod,
+  viewName: string = 'spots'
 ): Promise<ActivatorByModeTrendData[]> {
   const config = PERIOD_CONFIGS[period];
 
@@ -197,7 +199,7 @@ export async function getActivatorByModeTrend(
         DATE_TRUNC('${config.truncate}', hour::TIMESTAMP) as period,
         mode,
         activator
-      FROM spots, UNNEST(activators) as t(activator)
+      FROM ${viewName}, UNNEST(activators) as t(activator)
     ),
     cw_activators AS (
       SELECT period, COUNT(DISTINCT activator) as cnt
@@ -239,7 +241,8 @@ export async function getActivatorByModeTrend(
 
 export async function getTopParks(
   conn: AsyncDuckDBConnection,
-  limit: number = 10
+  limit: number = 10,
+  viewName: string = 'spots'
 ): Promise<TopParkData[]> {
   // Data is already time-filtered when loaded via loadDataIntoView
   // Parse activations array ("CALLSIGN|PARK" format) to count unique activators per park
@@ -248,7 +251,7 @@ export async function getTopParks(
       SELECT
         SPLIT_PART(activation, '|', 2) as reference,
         SPLIT_PART(activation, '|', 1) as activator
-      FROM spots, UNNEST(activations) as t(activation)
+      FROM ${viewName}, UNNEST(activations) as t(activation)
     )
     SELECT reference, COUNT(DISTINCT activator)::INTEGER as uniqueActivators
     FROM park_activators
@@ -267,7 +270,8 @@ export async function getTopParks(
 
 export async function getTopStates(
   conn: AsyncDuckDBConnection,
-  limit: number = 10
+  limit: number = 10,
+  viewName: string = 'spots'
 ): Promise<TopStateData[]> {
   // Data is already time-filtered when loaded via loadDataIntoView
   // Query state_activators from aggregated data (column may not exist in old data)
@@ -276,7 +280,7 @@ export async function getTopStates(
       SELECT
         SPLIT_PART(state_activator, '|', 1) as state,
         SPLIT_PART(state_activator, '|', 2) as activator
-      FROM spots, UNNEST(state_activators) as t(state_activator)
+      FROM ${viewName}, UNNEST(state_activators) as t(state_activator)
     )
     SELECT state, COUNT(DISTINCT activator)::INTEGER as uniqueActivators
     FROM state_data

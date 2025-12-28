@@ -42,5 +42,6 @@ export {
   filterManifestByTimeRange,
   filterManifestByTimeRangeWithLevel,
   loadDataIntoView,
+  getTrendTimeRange,
 } from './data';
 export type { DuckDBInstance, LoadedData, FilteredManifestResult, RollupLevel } from './data';
