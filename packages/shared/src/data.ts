@@ -80,8 +80,9 @@ export async function initDuckDB(): Promise<DuckDBInstance> {
   const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING);
   const db = new duckdb.AsyncDuckDB(logger, worker);
 
-  // Instantiate with cached WASM buffer
-  await db.instantiate(mainModuleBuffer);
+  // Compile WASM buffer to module, then instantiate
+  const wasmModule = await WebAssembly.compile(mainModuleBuffer);
+  await db.instantiate(wasmModule);
   URL.revokeObjectURL(workerUrl);
 
   const conn = await db.connect();
