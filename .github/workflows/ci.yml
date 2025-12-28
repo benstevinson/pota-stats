@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-and-lint:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Rush
+        run: npm install -g @microsoft/rush
+
+      - name: Rush Install
+        run: rush install
+
+      - name: Type Check - Shared
+        run: rush build -t @pota-stats/shared
+
+      - name: Test - Shared
+        working-directory: packages/shared
+        run: pnpm test
+
+      - name: Lint - Shared
+        working-directory: packages/shared
+        run: pnpm run lint
+
+      - name: Install Worker Dependencies
+        run: |
+          cd workers/pota-collector && pnpm install
+          cd ../pota-aggregator && pnpm install
+
+      - name: Type Check - Collector
+        working-directory: workers/pota-collector
+        run: pnpm run build
+
+      - name: Type Check - Aggregator
+        working-directory: workers/pota-aggregator
+        run: pnpm run build
