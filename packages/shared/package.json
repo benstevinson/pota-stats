@@ -35,6 +35,7 @@
     "nodeArguments": [
       "--import=tsx"
     ],
+    "workerThreads": false,
     "files": [
       "test/**/*.test.ts"
     ]
