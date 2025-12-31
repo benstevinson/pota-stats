@@ -54,7 +54,7 @@ export interface Manifest {
 }
 
 export type GroupBy = 'mode' | 'band' | 'entity';
-export type TimeRange = '1h' | '24h' | '7d' | '30d';
+export type TimeRange = '1h' | '24h' | '7d' | '30d' | 'all';
 export type TrendPeriod = 'daily' | 'weekly' | 'monthly';
 
 export interface ActivatorTrendData {
