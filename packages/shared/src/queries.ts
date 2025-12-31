@@ -14,12 +14,12 @@ async function queryAll<T>(conn: AsyncDuckDBConnection, sql: string): Promise<T[
   return result.toArray() as T[];
 }
 
-export async function getStats(conn: AsyncDuckDBConnection): Promise<PotaStats> {
+export async function getStats(conn: AsyncDuckDBConnection, viewName: string = 'spots'): Promise<PotaStats> {
   const [spots, activators, parks, activations] = await Promise.all([
-    queryOne<{ total: number }>(conn, `SELECT SUM(spot_count) as total FROM spots`),
-    queryOne<{ total: number }>(conn, `SELECT COUNT(DISTINCT activator) as total FROM spots, UNNEST(activators) as t(activator)`),
-    queryOne<{ total: number }>(conn, `SELECT COUNT(DISTINCT park) as total FROM spots, UNNEST(parks) as t(park)`),
-    queryOne<{ total: number }>(conn, `SELECT COUNT(DISTINCT activation) as total FROM spots, UNNEST(activations) as t(activation)`),
+    queryOne<{ total: number }>(conn, `SELECT SUM(spot_count) as total FROM ${viewName}`),
+    queryOne<{ total: number }>(conn, `SELECT COUNT(DISTINCT activator) as total FROM ${viewName}, UNNEST(activators) as t(activator)`),
+    queryOne<{ total: number }>(conn, `SELECT COUNT(DISTINCT park) as total FROM ${viewName}, UNNEST(parks) as t(park)`),
+    queryOne<{ total: number }>(conn, `SELECT COUNT(DISTINCT activation) as total FROM ${viewName}, UNNEST(activations) as t(activation)`),
   ]);
 
   return {
