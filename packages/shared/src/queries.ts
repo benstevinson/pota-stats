@@ -297,3 +297,37 @@ export async function getTopStates(
     return [];
   }
 }
+
+export interface TimeOfDayData {
+  hour: number;
+  count: number;
+}
+
+export async function getTimeOfDayActivity(
+  conn: AsyncDuckDBConnection,
+  viewName: string = 'spots'
+): Promise<TimeOfDayData[]> {
+  // Extract hour from the timestamp and aggregate spot counts
+  // The 'hour' column contains ISO timestamps like '2025-12-27T16:00:00Z'
+  const sql = `
+    SELECT
+      EXTRACT(HOUR FROM hour::TIMESTAMP) as hour,
+      SUM(spot_count) as count
+    FROM ${viewName}
+    GROUP BY EXTRACT(HOUR FROM hour::TIMESTAMP)
+    ORDER BY hour
+  `;
+
+  try {
+    const results = await queryAll<{ hour: number; count: number }>(conn, sql);
+    // Ensure all 24 hours are represented
+    const hourMap = new Map(results.map(r => [Number(r.hour), Number(r.count)]));
+    return Array.from({ length: 24 }, (_, i) => ({
+      hour: i,
+      count: hourMap.get(i) || 0
+    }));
+  } catch (e) {
+    console.error('getTimeOfDayActivity error:', e);
+    return Array.from({ length: 24 }, (_, i) => ({ hour: i, count: 0 }));
+  }
+}

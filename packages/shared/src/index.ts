@@ -33,7 +33,9 @@ export {
   getActivatorByModeTrend,
   getTopParks,
   getTopStates,
+  getTimeOfDayActivity,
 } from './queries';
+export type { TimeOfDayData } from './queries';
 
 // Data loading
 export {
