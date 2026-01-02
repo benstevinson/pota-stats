@@ -155,10 +155,15 @@ export async function getActivatorTrend(
   viewName: string = 'spots'
 ): Promise<ActivatorTrendData[]> {
   const config = PERIOD_CONFIGS[period];
+  // Handle both hourly data (has 'hour' column) and daily data (has 'date' column)
+  // Use COALESCE to pick whichever timestamp column exists
   const sql = `
     WITH period_activators AS (
       SELECT
-        DATE_TRUNC('${config.truncate}', hour::TIMESTAMP) as period,
+        DATE_TRUNC('${config.truncate}', COALESCE(
+          TRY_CAST(hour AS TIMESTAMP),
+          TRY_CAST(date AS TIMESTAMP)
+        )) as period,
         activator
       FROM ${viewName}, UNNEST(activators) as t(activator)
     )
@@ -166,6 +171,7 @@ export async function getActivatorTrend(
       strftime(period, '${config.format}') as period,
       COUNT(DISTINCT activator) as uniqueActivators
     FROM period_activators
+    WHERE period IS NOT NULL
     GROUP BY period
     ORDER BY period DESC
     LIMIT ${config.limit}
@@ -193,10 +199,14 @@ export async function getActivatorByModeTrend(
   const ssbModes = MODE_CATEGORIES.ssb.map(m => `'${m}'`).join(', ');
   const digitalModes = MODE_CATEGORIES.digital.map(m => `'${m}'`).join(', ');
 
+  // Handle both hourly data (has 'hour' column) and daily data (has 'date' column)
   const sql = `
     WITH base_data AS (
       SELECT
-        DATE_TRUNC('${config.truncate}', hour::TIMESTAMP) as period,
+        DATE_TRUNC('${config.truncate}', COALESCE(
+          TRY_CAST(hour AS TIMESTAMP),
+          TRY_CAST(date AS TIMESTAMP)
+        )) as period,
         mode,
         activator
       FROM ${viewName}, UNNEST(activators) as t(activator)
@@ -220,7 +230,7 @@ export async function getActivatorByModeTrend(
       GROUP BY period
     ),
     all_periods AS (
-      SELECT DISTINCT period FROM base_data
+      SELECT DISTINCT period FROM base_data WHERE period IS NOT NULL
     )
     SELECT
       strftime(p.period, '${config.format}') as period,
@@ -308,13 +318,15 @@ export async function getTimeOfDayActivity(
   viewName: string = 'spots'
 ): Promise<TimeOfDayData[]> {
   // Extract hour from the timestamp and aggregate spot counts
-  // The 'hour' column contains ISO timestamps like '2025-12-27T16:00:00Z'
+  // Hourly data has 'hour' column, daily data has 'date' (no hour granularity)
+  // Only hourly data can be used for time-of-day analysis
   const sql = `
     SELECT
-      EXTRACT(HOUR FROM hour::TIMESTAMP) as hour,
+      EXTRACT(HOUR FROM TRY_CAST(hour AS TIMESTAMP)) as hour,
       SUM(spot_count) as count
     FROM ${viewName}
-    GROUP BY EXTRACT(HOUR FROM hour::TIMESTAMP)
+    WHERE hour IS NOT NULL
+    GROUP BY EXTRACT(HOUR FROM TRY_CAST(hour AS TIMESTAMP))
     ORDER BY hour
   `;
 
