@@ -34,8 +34,9 @@ export {
   getTopParks,
   getTopStates,
   getTimeOfDayActivity,
+  getDayOfWeekActivity,
 } from './queries';
-export type { TimeOfDayData } from './queries';
+export type { TimeOfDayData, DayOfWeekData } from './queries';
 
 // Data loading
 export {

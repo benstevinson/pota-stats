@@ -313,6 +313,11 @@ export interface TimeOfDayData {
   count: number;
 }
 
+export interface DayOfWeekData {
+  dayOfWeek: number; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  count: number;
+}
+
 export async function getTimeOfDayActivity(
   conn: AsyncDuckDBConnection,
   viewName: string = 'spots'
@@ -341,5 +346,45 @@ export async function getTimeOfDayActivity(
   } catch (e) {
     console.error('getTimeOfDayActivity error:', e);
     return Array.from({ length: 24 }, (_, i) => ({ hour: i, count: 0 }));
+  }
+}
+
+export async function getDayOfWeekActivity(
+  conn: AsyncDuckDBConnection,
+  viewName: string = 'spots'
+): Promise<DayOfWeekData[]> {
+  // Extract day of week from the timestamp and aggregate spot counts
+  // DuckDB DAYOFWEEK returns 0=Sunday, 1=Monday, ..., 6=Saturday
+  // Hourly data has 'hour' column, daily data has 'date' column
+  const sql = `
+    SELECT
+      DAYOFWEEK(COALESCE(
+        TRY_CAST(hour AS TIMESTAMP),
+        TRY_CAST(date AS TIMESTAMP)
+      )) as dayOfWeek,
+      SUM(spot_count) as count
+    FROM ${viewName}
+    WHERE COALESCE(
+      TRY_CAST(hour AS TIMESTAMP),
+      TRY_CAST(date AS TIMESTAMP)
+    ) IS NOT NULL
+    GROUP BY DAYOFWEEK(COALESCE(
+      TRY_CAST(hour AS TIMESTAMP),
+      TRY_CAST(date AS TIMESTAMP)
+    ))
+    ORDER BY dayOfWeek
+  `;
+
+  try {
+    const results = await queryAll<{ dayOfWeek: number; count: number }>(conn, sql);
+    // Ensure all 7 days are represented
+    const dayMap = new Map(results.map(r => [Number(r.dayOfWeek), Number(r.count)]));
+    return Array.from({ length: 7 }, (_, i) => ({
+      dayOfWeek: i,
+      count: dayMap.get(i) || 0
+    }));
+  } catch (e) {
+    console.error('getDayOfWeekActivity error:', e);
+    return Array.from({ length: 7 }, (_, i) => ({ dayOfWeek: i, count: 0 }));
   }
 }
