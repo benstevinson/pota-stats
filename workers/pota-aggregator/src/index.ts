@@ -1,5 +1,6 @@
 import { Result, ok, err } from 'neverthrow';
 import { computeContentHash, addHashToFilename } from './utils.js';
+import { generateAllSummaries } from './summaries.js';
 
 interface NormalizedSpot {
   ts: string;
@@ -929,6 +930,9 @@ export default {
           console.error(`[HOURLY] Aggregation failed: [${error.type}] ${error.message}`);
         }
       );
+
+      // Generate pre-computed summaries after hourly aggregation
+      await generateAllSummaries(env.R2);
     } else if (cronName === '15 0 * * *') {
       // Daily aggregation - aggregate the previous day
       const targetDay = new Date(now);
@@ -946,6 +950,9 @@ export default {
           console.error(`[DAILY] Aggregation failed: [${error.type}] ${error.message}`);
         }
       );
+
+      // Regenerate summaries after daily aggregation
+      await generateAllSummaries(env.R2);
     } else if (cronName === '30 0 1 * *') {
       // Monthly aggregation - runs on 1st of month, aggregates previous month
       const targetMonth = new Date(now);
@@ -963,6 +970,9 @@ export default {
           console.error(`[MONTHLY] Aggregation failed: [${error.type}] ${error.message}`);
         }
       );
+
+      // Regenerate summaries after monthly aggregation
+      await generateAllSummaries(env.R2);
     } else {
       // Default: run hourly aggregation
       const targetHour = new Date(now);
@@ -979,13 +989,16 @@ export default {
           console.error(`[DEFAULT] Aggregation failed: [${error.type}] ${error.message}`);
         }
       );
+
+      // Generate summaries after default aggregation too
+      await generateAllSummaries(env.R2);
     }
   },
 
-  // HTTP handler - health check only, aggregation is cron-triggered
+  // HTTP handler - health check and manual triggers
   async fetch(
     request: Request,
-    _env: Env,
+    env: Env,
     _ctx: ExecutionContext
   ): Promise<Response> {
     const url = new URL(request.url);
@@ -997,8 +1010,24 @@ export default {
       );
     }
 
+    // Manual trigger for summary generation
+    if (url.pathname === '/generate-summaries') {
+      try {
+        await generateAllSummaries(env.R2);
+        return new Response(
+          JSON.stringify({ status: 'ok', message: 'Summaries generated successfully' }),
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      } catch (error) {
+        return new Response(
+          JSON.stringify({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error' }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     return new Response(
-      JSON.stringify({ service: 'pota-aggregator', status: 'ok', endpoints: ['/health'] }),
+      JSON.stringify({ service: 'pota-aggregator', status: 'ok', endpoints: ['/health', '/generate-summaries'] }),
       { headers: { 'Content-Type': 'application/json' } }
     );
   },
