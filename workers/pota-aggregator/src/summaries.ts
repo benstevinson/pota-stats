@@ -363,10 +363,15 @@ export async function generateAllSummaries(r2: R2Bucket): Promise<void> {
   };
 
   // Calculate time boundaries
+  // Round down to start of hour to include complete hours in the window
   const now24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  now24h.setMinutes(0, 0, 0);
   const now7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  now7d.setHours(0, 0, 0, 0); // Round to start of day
   const now30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  now30d.setHours(0, 0, 0, 0);
   const now14d = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+  now14d.setHours(0, 0, 0, 0);
 
   // Filter files by time range
   const hourlyFiles24h = manifest.hourly.filter((h) => new Date(h.hour) >= now24h);
