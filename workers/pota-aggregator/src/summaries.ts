@@ -509,6 +509,10 @@ export async function generateAllSummaries(r2: R2Bucket): Promise<void> {
     data_since: earliestDate,
   };
   await storeSummary(r2, 'summaries/all_time.json', allTime);
+
+  // Also generate full period stats for all-time (with mode/band/entity breakdowns)
+  const statsAll = groupsToPeriodStats(groupsAllTime, 'all');
+  await storeSummary(r2, 'summaries/stats_all.json', statsAll);
   console.log(`[SUMMARIES] All-time stats: ${allTime.total_spots} spots, ${allTime.unique_activators} activators`);
 
   // ========================================
