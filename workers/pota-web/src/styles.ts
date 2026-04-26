@@ -68,8 +68,9 @@ h3{font-size:1rem;line-height:1.3;margin-top:1.5rem}
 .site-footer hr{border:none;border-top:1px solid #ddd}
 .site-footer h2{font-size:1rem;margin:1rem 0 .3rem}
 .site-footer p{font-size:.9em;margin:0 0 1rem}
+.site-footer a{text-decoration:none}
 .easter-egg{text-align:center;margin:.5rem 0 0}
-.easter-egg a,.easter-egg a:visited{font-size:8pt;font-style:italic;color:#666;text-decoration:none}
+.easter-egg a,.easter-egg a:visited{font-size:6.4pt;font-style:italic;color:#666;text-decoration:none}
 @media(max-width:480px){
 body{padding:14px 20px}
 .site-brand{font-size:1.4rem}
