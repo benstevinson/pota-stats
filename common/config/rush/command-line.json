@@ -34,19 +34,19 @@
       "name": "deploy:collector",
       "commandKind": "global",
       "summary": "Deploy pota-collector worker",
-      "shellCommand": "cd workers/pota-collector && pnpm deploy"
+      "shellCommand": "cd workers/pota-collector && pnpm run deploy"
     },
     {
       "name": "deploy:aggregator",
       "commandKind": "global",
       "summary": "Deploy pota-aggregator worker",
-      "shellCommand": "cd workers/pota-aggregator && pnpm deploy"
+      "shellCommand": "cd workers/pota-aggregator && pnpm run deploy"
     },
     {
       "name": "deploy:web",
       "commandKind": "global",
       "summary": "Deploy pota-web worker",
-      "shellCommand": "cd workers/pota-web && pnpm deploy"
+      "shellCommand": "cd workers/pota-web && pnpm run deploy"
     },
     {
       "name": "deploy:all",
