@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "pnpm build:client && tsc --noEmit",
+    "build": "esbuild src/client/index.ts --bundle --format=esm --target=es2022 --outfile=dist/pota-stats/assets/app.js --minify && tsc --noEmit",
     "build:client": "esbuild src/client/index.ts --bundle --format=esm --target=es2022 --outfile=dist/pota-stats/assets/app.js --minify",
-    "dev": "pnpm build:client && wrangler dev",
-    "deploy": "pnpm build:client && wrangler deploy",
+    "dev": "esbuild src/client/index.ts --bundle --format=esm --target=es2022 --outfile=dist/pota-stats/assets/app.js --minify && wrangler dev",
+    "deploy": "esbuild src/client/index.ts --bundle --format=esm --target=es2022 --outfile=dist/pota-stats/assets/app.js --minify && wrangler deploy",
     "tail": "wrangler tail"
   },
   "dependencies": {
