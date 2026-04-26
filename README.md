@@ -6,7 +6,8 @@ Parks on the Air (POTA) statistics collection, aggregation, and querying library
 
 This monorepo provides:
 
-- **Cloudflare Workers** for collecting and aggregating POTA spot data
+- **Cloudflare Workers** for collecting, aggregating, and serving POTA spot data
+- **Public dashboard worker** for the branded `w0arr.com/pota-stats/` page
 - **TypeScript modules** for querying aggregated data using DuckDB WASM
 - **Data loading utilities** for fetching and processing NDJSON files from R2
 
@@ -21,10 +22,12 @@ pota-stats/
 │           ├── constants.ts # Band order, time ranges
 │           ├── queries.ts   # DuckDB query functions
 │           ├── data.ts      # Data loading and manifest handling
+│           ├── summary-types.ts # Summary JSON contracts
 │           └── index.ts     # Barrel exports
 ├── workers/
 │   ├── pota-collector/      # Collects raw spot data from POTA API
-│   └── pota-aggregator/     # Aggregates data (hourly, daily, monthly)
+│   ├── pota-aggregator/     # Aggregates data (hourly, daily, monthly)
+│   └── pota-web/            # Serves the public /pota-stats dashboard
 ├── common/
 │   └── config/rush/         # Rush configuration
 ├── rush.json                # Rush monorepo config
@@ -61,6 +64,9 @@ rush deploy:collector
 # Deploy aggregator
 rush deploy:aggregator
 
+# Deploy web dashboard
+rush deploy:web
+
 # Deploy all
 rush deploy:all
 ```
@@ -77,6 +83,13 @@ Scheduled aggregation worker:
 - **Hourly** (`:05`): Aggregates raw minute data into hourly NDJSON
 - **Daily** (`00:15 UTC`): Rolls up hourly data into daily summaries
 - **Monthly** (`00:30 UTC on 1st`): Rolls up daily data into monthly summaries
+
+### pota-web
+
+Route-facing worker for `https://w0arr.com/pota-stats/`. It renders the branded
+HTML dashboard, serves the bundled browser charts, proxies summary JSON from R2
+under `/pota-stats/api/summaries/`, and owns the POTA-specific sitemap and
+`llms.txt`.
 
 ## Usage
 

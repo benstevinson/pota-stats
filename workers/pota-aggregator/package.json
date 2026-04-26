@@ -11,6 +11,7 @@
     "test": "ava"
   },
   "dependencies": {
+    "@pota-stats/shared": "0.1.0",
     "neverthrow": "^8.2.0"
   },
   "devDependencies": {

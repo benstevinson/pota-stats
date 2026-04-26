@@ -1,0 +1,22 @@
+{
+  "name": "pota-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm build:client && tsc --noEmit",
+    "build:client": "esbuild src/client/index.ts --bundle --format=esm --target=es2022 --outfile=dist/pota-stats/assets/app.js --minify",
+    "dev": "pnpm build:client && wrangler dev",
+    "deploy": "pnpm build:client && wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "@pota-stats/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241218.0",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.54.0"
+  }
+}

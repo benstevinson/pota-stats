@@ -46,6 +46,7 @@ jobs:
         run: |
           cd workers/pota-collector && pnpm install
           cd ../pota-aggregator && pnpm install
+          cd ../pota-web && pnpm install
 
       - name: Type Check - Collector
         working-directory: workers/pota-collector
@@ -53,4 +54,8 @@ jobs:
 
       - name: Type Check - Aggregator
         working-directory: workers/pota-aggregator
+        run: pnpm run build
+
+      - name: Type Check - Web
+        working-directory: workers/pota-web
         run: pnpm run build

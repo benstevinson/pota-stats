@@ -1,0 +1,44 @@
+name: Deploy POTA Web
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - common/config/rush/**
+      - common/scripts/**
+      - packages/shared/**
+      - workers/pota-web/**
+      - pnpm-lock.yaml
+      - rush.json
+
+jobs:
+  deploy:
+    name: Deploy pota-web
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rush
+        run: npm install -g @microsoft/rush
+
+      - name: Rush Install
+        run: rush install
+
+      - name: Build pota-web
+        run: rush build -t pota-web
+
+      - name: Deploy pota-web
+        run: rush deploy:web

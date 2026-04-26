@@ -23,6 +23,11 @@
       "packageName": "pota-aggregator",
       "projectFolder": "workers/pota-aggregator",
       "reviewCategory": "production"
+    },
+    {
+      "packageName": "pota-web",
+      "projectFolder": "workers/pota-web",
+      "reviewCategory": "production"
     }
   ]
 }

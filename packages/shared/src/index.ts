@@ -16,6 +16,18 @@ export type {
   TopParkData,
   TopStateData,
 } from './types';
+export type {
+  AllTimeSummary,
+  ModeStats,
+  BandStats,
+  EntityStats,
+  PeriodStats,
+  TrendDataPoint,
+  TrendsSummary,
+  TimeOfDaySummary,
+  DayOfWeekSummary,
+  TopEntitiesSummary,
+} from './summary-types';
 
 // Constants
 export {

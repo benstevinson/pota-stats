@@ -6,6 +6,18 @@
  */
 
 import { Result, ok, err } from 'neverthrow';
+import type {
+  AllTimeSummary,
+  ModeStats,
+  BandStats,
+  EntityStats,
+  PeriodStats,
+  TrendDataPoint,
+  TrendsSummary,
+  TimeOfDaySummary,
+  DayOfWeekSummary,
+  TopEntitiesSummary,
+} from '@pota-stats/shared/summary-types';
 
 // ============================================================================
 // Types
@@ -41,82 +53,6 @@ type SummaryError =
 // ============================================================================
 // Summary Schemas
 // ============================================================================
-
-interface AllTimeSummary {
-  updated_at: string;
-  total_spots: number;
-  total_activations: number;
-  unique_activators: number;
-  unique_parks: number;
-  data_since: string;
-}
-
-interface ModeStats {
-  mode: string;
-  spots: number;
-  activations: number;
-  activators: number;
-  parks: number;
-}
-
-interface BandStats {
-  band: string;
-  spots: number;
-  activations: number;
-  activators: number;
-  parks: number;
-}
-
-interface EntityStats {
-  entity: string;
-  spots: number;
-  activations: number;
-  activators: number;
-  parks: number;
-}
-
-interface PeriodStats {
-  updated_at: string;
-  period: string;
-  total_spots: number;
-  total_activations: number;
-  unique_activators: number;
-  unique_parks: number;
-  by_mode: ModeStats[];
-  by_band: BandStats[];
-  by_entity: EntityStats[];
-}
-
-interface TrendDataPoint {
-  period: string;
-  activators: number;
-  cw: number;
-  ssb: number;
-  digital: number;
-}
-
-interface TrendsSummary {
-  updated_at: string;
-  daily: TrendDataPoint[];
-  weekly: TrendDataPoint[];
-  monthly: TrendDataPoint[];
-}
-
-interface TimeOfDaySummary {
-  updated_at: string;
-  hours: { hour: number; spots: number }[];
-}
-
-interface DayOfWeekSummary {
-  updated_at: string;
-  days: { day: number; spots: number }[];
-}
-
-interface TopEntitiesSummary {
-  updated_at: string;
-  top_parks: { reference: string; activators: number }[];
-  top_states: { state: string; activators: number }[];
-}
 
 // Mode categories for trend analysis
 const MODE_CATEGORIES = {
