@@ -42,12 +42,6 @@ jobs:
         working-directory: packages/shared
         run: pnpm run lint
 
-      - name: Install Worker Dependencies
-        run: |
-          cd workers/pota-collector && pnpm install
-          cd ../pota-aggregator && pnpm install
-          cd ../pota-web && pnpm install
-
       - name: Type Check - Collector
         working-directory: workers/pota-collector
         run: pnpm run build
