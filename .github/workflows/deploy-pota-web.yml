@@ -45,5 +45,12 @@ jobs:
       - name: Build pota-web
         run: rush build -t pota-web
 
+      - name: Skip deploy without Cloudflare secrets
+        if: env.CLOUDFLARE_ACCOUNT_ID == '' || env.CLOUDFLARE_API_TOKEN == ''
+        run: |
+          echo "Skipping deploy because CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN is not configured."
+          echo "The workflow will deploy automatically after both repository secrets are set."
+
       - name: Deploy pota-web
+        if: env.CLOUDFLARE_ACCOUNT_ID != '' && env.CLOUDFLARE_API_TOKEN != ''
         run: rush deploy:web
