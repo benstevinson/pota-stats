@@ -6,8 +6,8 @@ Parks on the Air (POTA) statistics collection, aggregation, and querying library
 
 This monorepo provides:
 
-- **Cloudflare Workers** for collecting, aggregating, and serving POTA spot data
-- **Public dashboard worker** for the branded `w0arr.com/pota-stats/` page
+- **Cloudflare Workers** for collecting and aggregating POTA spot data
+- **Summary JSON files** in R2: the public interface that dashboards read
 - **TypeScript modules** for querying aggregated data using DuckDB WASM
 - **Data loading utilities** for fetching and processing NDJSON files from R2
 
@@ -26,8 +26,7 @@ pota-stats/
 │           └── index.ts     # Barrel exports
 ├── workers/
 │   ├── pota-collector/      # Collects raw spot data from POTA API
-│   ├── pota-aggregator/     # Aggregates data (hourly, daily, monthly)
-│   └── pota-web/            # Serves the public /pota-stats dashboard
+│   └── pota-aggregator/     # Aggregates data and writes summary JSON
 ├── common/
 │   └── config/rush/         # Rush configuration
 ├── rush.json                # Rush monorepo config
@@ -64,9 +63,6 @@ rush deploy:collector
 # Deploy aggregator
 rush deploy:aggregator
 
-# Deploy web dashboard
-rush deploy:web
-
 # Deploy all
 rush deploy:all
 ```
@@ -84,12 +80,30 @@ Scheduled aggregation worker:
 - **Daily** (`00:15 UTC`): Rolls up hourly data into daily summaries
 - **Monthly** (`00:30 UTC on 1st`): Rolls up daily data into monthly summaries
 
-### pota-web
+## Summary files
 
-Route-facing worker for `https://w0arr.com/pota-stats/`. It renders the branded
-HTML dashboard, serves the bundled browser charts, proxies summary JSON from R2
-under `/pota-stats/api/summaries/`, and owns the POTA-specific sitemap and
-`llms.txt`.
+The aggregator writes these files to the `pota-data` R2 bucket under
+`summaries/` every hour. Their shapes are defined in
+[`packages/shared/src/summary-types.ts`](packages/shared/src/summary-types.ts).
+Treat them as a public API: add fields freely, but rename or remove a field
+only together with every reader.
+
+| File | Contents | Window |
+| --- | --- | --- |
+| `all_time.json` | Spots, spotted activations, activators, parks | All time |
+| `stats_24h.json`, `stats_7d.json`, `stats_30d.json`, `stats_all.json` | Totals and breakdowns by mode, band, and entity | As named |
+| `trends.json` | Unique activators, total and by CW/SSB/Digital | Daily (14 days), weekly (14 weeks), monthly (12 months) |
+| `time_of_day.json` | Spots by UTC hour | Past 24 hours |
+| `day_of_week.json` | Spots by UTC day (0 = Sunday) | Past 7 days |
+| `top_entities.json` | Top parks and US states by unique activators | Past 14 days |
+
+## Dashboard
+
+The public dashboard at [w0arr.com/pota-stats/](https://w0arr.com/pota-stats/)
+lives in the [w0arr.com](https://github.com/benstevinson/w0arr.com) site. It
+reads the summary files from R2 and also serves them as JSON at
+`https://w0arr.com/pota-stats/api/summaries/<file>`. To build your own view,
+read that API or bind the bucket in your own Worker.
 
 ## Usage
 
