@@ -373,3 +373,44 @@ test('mergeAggregatesIntoGroups handles empty array', t => {
   mergeAggregatesIntoGroups([], groups);
   t.is(groups.size, 0);
 });
+
+// Rollup bookkeeping
+import { rollupSlots, hoursBefore, daysBefore, parseCompletedPeriod } from '../src/utils.ts';
+
+test('rollupSlots finds hashed and unhashed rollups and skips meta files', t => {
+  const keys = [
+    'daily/2026/11/20-f8df59c8.ndjson',
+    'daily/2026/11/20.meta.json',
+    'daily/2026/11/22-18c18796.ndjson',
+    'daily/2026/11/03.ndjson',
+    'daily/2026/11/sub/09-x.ndjson',
+  ];
+  t.deepEqual([...rollupSlots(keys, 'daily/2026/11/')].sort(), ['03', '20', '22']);
+});
+
+test('hoursBefore lists whole hours, oldest first', t => {
+  const hours = hoursBefore(new Date('2026-11-22T00:15:05Z'), 3, 1).map(d => d.toISOString());
+  t.deepEqual(hours, ['2026-11-21T21:00:00.000Z', '2026-11-21T22:00:00.000Z', '2026-11-21T23:00:00.000Z']);
+});
+
+test('daysBefore crosses month boundaries', t => {
+  const days = daysBefore(new Date('2026-12-01T00:15:00Z'), 2, 1).map(d => d.toISOString().slice(0, 10));
+  t.deepEqual(days, ['2026-11-29', '2026-11-30']);
+});
+
+test('parseCompletedPeriod accepts only periods that have ended', t => {
+  const now = new Date('2026-11-27T23:30:00Z');
+  t.is(parseCompletedPeriod('day', '2026-11-21', now)?.toISOString(), '2026-11-21T00:00:00.000Z');
+  t.is(parseCompletedPeriod('day', '2026-11-27', now), null);
+  t.is(parseCompletedPeriod('hour', '2026-11-27T22', now)?.toISOString(), '2026-11-27T22:00:00.000Z');
+  t.is(parseCompletedPeriod('hour', '2026-11-27T23', now), null);
+  t.is(parseCompletedPeriod('month', '2026-10', now)?.toISOString(), '2026-10-01T00:00:00.000Z');
+  t.is(parseCompletedPeriod('month', '2026-11', now), null);
+});
+
+test('parseCompletedPeriod rejects malformed and impossible dates', t => {
+  const now = new Date('2026-11-27T23:30:00Z');
+  t.is(parseCompletedPeriod('day', '2026-02-30', now), null);
+  t.is(parseCompletedPeriod('day', '2026-11-21T00', now), null);
+  t.is(parseCompletedPeriod('month', 'nope', now), null);
+});

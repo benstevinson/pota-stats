@@ -175,3 +175,90 @@ export function mergeAggregatesIntoGroups<T extends BaseAggregate>(
     }
   });
 }
+
+// ============================================================================
+// Rollup bookkeeping (self-heal and manual backfill)
+// ============================================================================
+
+/**
+ * The slots that already have a rollup file under a listing prefix.
+ * "hourly/2026/11/21/00-abc12345.ndjson" under "hourly/2026/11/21/" → "00".
+ * Old unhashed names ("daily/2025/12/27.ndjson") count too. Meta files do not.
+ */
+export function rollupSlots(keys: string[], prefix: string): Set<string> {
+  const slots = new Set<string>();
+  for (const key of keys) {
+    if (!key.startsWith(prefix) || !key.endsWith('.ndjson')) continue;
+    const name = key.slice(prefix.length);
+    if (name.includes('/')) continue;
+    const slot = name.split(/[-.]/)[0];
+    if (slot) slots.add(slot);
+  }
+  return slots;
+}
+
+function startOfHour(date: Date): Date {
+  const d = new Date(date);
+  d.setUTCMinutes(0, 0, 0);
+  return d;
+}
+
+function startOfDay(date: Date): Date {
+  const d = new Date(date);
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
+
+/** Start of each UTC hour from `from` to `to` hours before `now`'s hour, oldest first. */
+export function hoursBefore(now: Date, from: number, to: number): Date[] {
+  const base = startOfHour(now).getTime();
+  const out: Date[] = [];
+  for (let n = from; n >= to; n--) out.push(new Date(base - n * 3_600_000));
+  return out;
+}
+
+/** Start of each UTC day from `from` to `to` days before `now`'s day, oldest first. */
+export function daysBefore(now: Date, from: number, to: number): Date[] {
+  const base = startOfDay(now);
+  const out: Date[] = [];
+  for (let n = from; n >= to; n--) {
+    const d = new Date(base);
+    d.setUTCDate(d.getUTCDate() - n);
+    out.push(d);
+  }
+  return out;
+}
+
+export type RollupLevel = 'hour' | 'day' | 'month';
+
+/**
+ * Parse a manual backfill target. Accepts "YYYY-MM-DDTHH" (hour),
+ * "YYYY-MM-DD" (day), or "YYYY-MM" (month), in UTC. Returns null unless the
+ * period has fully ended before `now`, so a backfill never rolls up a period
+ * that is still collecting spots.
+ */
+export function parseCompletedPeriod(level: RollupLevel, value: string, now: Date): Date | null {
+  const patterns: Record<RollupLevel, RegExp> = {
+    hour: /^(\d{4})-(\d{2})-(\d{2})T(\d{2})$/,
+    day: /^(\d{4})-(\d{2})-(\d{2})$/,
+    month: /^(\d{4})-(\d{2})$/,
+  };
+  const match = patterns[level].exec(value);
+  if (!match) return null;
+  const [, y, mo, d = '01', h = '00'] = match;
+  const start = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h)));
+  // Reject rollovers such as 2026-02-30.
+  if (
+    start.getUTCFullYear() !== Number(y) ||
+    start.getUTCMonth() !== Number(mo) - 1 ||
+    start.getUTCDate() !== Number(d) ||
+    start.getUTCHours() !== Number(h)
+  ) {
+    return null;
+  }
+  const end = new Date(start);
+  if (level === 'hour') end.setUTCHours(end.getUTCHours() + 1);
+  else if (level === 'day') end.setUTCDate(end.getUTCDate() + 1);
+  else end.setUTCMonth(end.getUTCMonth() + 1);
+  return end.getTime() <= now.getTime() ? start : null;
+}
