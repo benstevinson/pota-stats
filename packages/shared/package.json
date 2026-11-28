@@ -11,7 +11,8 @@
     "./summary-types": "./src/summary-types.ts",
     "./queries": "./src/queries.ts",
     "./data": "./src/data.ts",
-    "./constants": "./src/constants.ts"
+    "./constants": "./src/constants.ts",
+    "./r2-retry": "./src/r2-retry.ts"
   },
   "files": [
     "src"

@@ -1,5 +1,14 @@
 import { Result, ok, err } from 'neverthrow';
-import { computeContentHash, addHashToFilename } from './utils.js';
+import { retryingBucket } from '@pota-stats/shared/r2-retry';
+import {
+  computeContentHash,
+  addHashToFilename,
+  rollupSlots,
+  hoursBefore,
+  daysBefore,
+  parseCompletedPeriod,
+  type RollupLevel,
+} from './utils.js';
 import { generateAllSummaries } from './summaries.js';
 
 interface NormalizedSpot {
@@ -73,6 +82,8 @@ interface MonthlySummary extends BaseSummary {
 
 interface Env {
   R2: R2Bucket;
+  /** Bearer token for the manual endpoints. Set with `wrangler secret put ADMIN_TOKEN`. */
+  ADMIN_TOKEN?: string;
 }
 
 type AggregatorError =
@@ -899,6 +910,117 @@ async function aggregateMonth(
   return ok(summary);
 }
 
+// ============================================================================
+// Rollup existence, self-heal, and manual backfill
+// ============================================================================
+
+/** Listing prefix and slot for the rollup of one period. */
+function rollupLocation(level: RollupLevel, date: Date): { prefix: string; slot: string } {
+  const hourPath = formatHourPath(date); // YYYY/MM/DD/HH
+  const [y, m, d, h] = hourPath.split('/') as [string, string, string, string];
+  if (level === 'hour') return { prefix: `hourly/${y}/${m}/${d}/`, slot: h };
+  if (level === 'day') return { prefix: `daily/${y}/${m}/`, slot: d };
+  return { prefix: `monthly/${y}/`, slot: m };
+}
+
+/** Input files the rollup reads: raw minutes, hourly files, or daily files. */
+function sourcePrefix(level: RollupLevel, date: Date): string {
+  if (level === 'hour') return `raw/${formatHourPath(date)}/`;
+  if (level === 'day') return `hourly/${formatDayPath(date)}/`;
+  return `daily/${formatMonthPath(date)}/`;
+}
+
+async function listKeys(r2: R2Bucket, prefix: string): Promise<string[]> {
+  const keys: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await r2.list({ prefix, cursor });
+    keys.push(...page.objects.map((o) => o.key));
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  return keys;
+}
+
+async function rollupExists(r2: R2Bucket, level: RollupLevel, date: Date): Promise<boolean> {
+  const { prefix, slot } = rollupLocation(level, date);
+  return rollupSlots(await listKeys(r2, prefix), prefix).has(slot);
+}
+
+async function hasSourceFiles(r2: R2Bucket, level: RollupLevel, date: Date): Promise<boolean> {
+  const listed = await r2.list({ prefix: sourcePrefix(level, date), limit: 1 });
+  return listed.objects.length > 0;
+}
+
+type EnsureOutcome = 'created' | 'exists' | 'no-source' | 'failed';
+
+/**
+ * Roll up one period unless its rollup already exists. Readers merge every
+ * file under a prefix, so a second rollup for the same period would be
+ * counted twice: never write one. Only reads and writes; never deletes.
+ */
+async function ensureRollup(r2: R2Bucket, level: RollupLevel, date: Date): Promise<EnsureOutcome> {
+  const label = level === 'hour' ? getHourTimestamp(date) : level === 'day' ? getDayTimestamp(date) : getMonthTimestamp(date);
+  try {
+    if (await rollupExists(r2, level, date)) return 'exists';
+    if (!(await hasSourceFiles(r2, level, date))) return 'no-source';
+  } catch (error) {
+    console.error(`[ENSURE] ${level} ${label}: check failed: ${error instanceof Error ? error.message : String(error)}`);
+    return 'failed';
+  }
+
+  const result =
+    level === 'hour' ? await aggregateHour(r2, date) : level === 'day' ? await aggregateDay(r2, date) : await aggregateMonth(r2, date);
+  return result.match(
+    (summary) => {
+      console.log(`[ENSURE] ${level} ${label}: rolled up ${summary.total_spots} spots from ${summary.files_processed} files`);
+      return 'created' as const;
+    },
+    (error) => {
+      console.error(`[ENSURE] ${level} ${label}: failed: [${error.type}] ${error.message}`);
+      return 'failed' as const;
+    },
+  );
+}
+
+/** Roll up any recent period that has source files but no rollup. */
+async function healRecent(r2: R2Bucket, level: RollupLevel, dates: Date[]): Promise<number> {
+  let created = 0;
+  for (const date of dates) {
+    if ((await ensureRollup(r2, level, date)) === 'created') created++;
+  }
+  if (created > 0) console.log(`[HEAL] Backfilled ${created} missing ${level} rollup(s)`);
+  return created;
+}
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+  const enc = new TextEncoder();
+  const [ha, hb] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(a)),
+    crypto.subtle.digest('SHA-256', enc.encode(b)),
+  ]);
+  const va = new Uint8Array(ha);
+  const vb = new Uint8Array(hb);
+  let diff = 0;
+  for (let i = 0; i < va.length; i++) diff |= (va[i] ?? 0) ^ (vb[i] ?? 0);
+  return diff === 0;
+}
+
+/** Manual endpoints need POST and `Authorization: Bearer <ADMIN_TOKEN>`. */
+async function authorize(request: Request, env: Env): Promise<Response | null> {
+  if (!env.ADMIN_TOKEN) return json({ status: 'error', message: 'ADMIN_TOKEN is not configured' }, 503);
+  if (request.method !== 'POST') return json({ status: 'error', message: 'Use POST' }, 405);
+  const header = request.headers.get('Authorization') ?? '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (!token || !(await timingSafeEqual(token, env.ADMIN_TOKEN))) {
+    return json({ status: 'error', message: 'Unauthorized' }, 401);
+  }
+  return null;
+}
+
 export default {
   async scheduled(
     controller: ScheduledController,
@@ -906,96 +1028,31 @@ export default {
     _ctx: ExecutionContext
   ): Promise<void> {
     const now = new Date();
-    const cronName = controller.cron;
+    const r2 = retryingBucket(env.R2);
 
-    // Determine which aggregation to run based on cron schedule
-    // Hourly: */5 * * * * (every hour at :05)
-    // Daily: 15 0 * * * (00:15 UTC daily)
-    // Monthly: 30 0 * * * (00:30 UTC daily)
-
-    if (cronName === '5 * * * *') {
-      // Hourly aggregation - aggregate the previous hour
-      const targetHour = new Date(now);
-      targetHour.setUTCHours(targetHour.getUTCHours() - 1);
-
-      const result = await aggregateHour(env.R2, targetHour);
-      result.match(
-        (summary) => {
-          console.log(
-            `[HOURLY] Aggregated ${summary.hour}: ${summary.total_spots} spots, ` +
-            `${summary.total_unique_activators} activators, ${summary.files_processed} files`
-          );
-        },
-        (error) => {
-          console.error(`[HOURLY] Aggregation failed: [${error.type}] ${error.message}`);
-        }
-      );
-
-      // Generate pre-computed summaries after hourly aggregation
-      await generateAllSummaries(env.R2);
-    } else if (cronName === '15 0 * * *') {
-      // Daily aggregation - aggregate the previous day
-      const targetDay = new Date(now);
-      targetDay.setUTCDate(targetDay.getUTCDate() - 1);
-
-      const result = await aggregateDay(env.R2, targetDay);
-      result.match(
-        (summary) => {
-          console.log(
-            `[DAILY] Aggregated ${summary.date}: ${summary.total_spots} spots, ` +
-            `${summary.total_unique_activators} activators, ${summary.files_processed} hourly files`
-          );
-        },
-        (error) => {
-          console.error(`[DAILY] Aggregation failed: [${error.type}] ${error.message}`);
-        }
-      );
-
-      // Regenerate summaries after daily aggregation
-      await generateAllSummaries(env.R2);
-    } else if (cronName === '30 0 1 * *') {
-      // Monthly aggregation - runs on 1st of month, aggregates previous month
-      const targetMonth = new Date(now);
-      targetMonth.setUTCMonth(targetMonth.getUTCMonth() - 1);
-
-      const result = await aggregateMonth(env.R2, targetMonth);
-      result.match(
-        (summary) => {
-          console.log(
-            `[MONTHLY] Aggregated ${summary.month}: ${summary.total_spots} spots, ` +
-            `${summary.total_unique_activators} activators, ${summary.files_processed} daily files`
-          );
-        },
-        (error) => {
-          console.error(`[MONTHLY] Aggregation failed: [${error.type}] ${error.message}`);
-        }
-      );
-
-      // Regenerate summaries after monthly aggregation
-      await generateAllSummaries(env.R2);
+    if (controller.cron === '15 0 * * *') {
+      // Daily, 00:15 UTC: yesterday, then any day in the past week that a
+      // failed run skipped, then last month if its monthly rollup is missing.
+      await healRecent(r2, 'day', daysBefore(now, 7, 1));
+      if (now.getUTCDate() >= 2) {
+        const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+        await healRecent(r2, 'month', [lastMonth]);
+      }
+    } else if (controller.cron === '30 0 1 * *') {
+      // Monthly, 00:30 UTC on the 1st: last month. The daily run at 00:15
+      // has already filled any missing days.
+      const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+      await healRecent(r2, 'month', [lastMonth]);
     } else {
-      // Default: run hourly aggregation
-      const targetHour = new Date(now);
-      targetHour.setUTCHours(targetHour.getUTCHours() - 1);
-
-      const result = await aggregateHour(env.R2, targetHour);
-      result.match(
-        (summary) => {
-          console.log(
-            `[DEFAULT] Aggregated hour ${summary.hour}: ${summary.total_spots} spots`
-          );
-        },
-        (error) => {
-          console.error(`[DEFAULT] Aggregation failed: [${error.type}] ${error.message}`);
-        }
-      );
-
-      // Generate summaries after default aggregation too
-      await generateAllSummaries(env.R2);
+      // Hourly, :05: the previous hour, then any hour in the past day that a
+      // failed run skipped.
+      await healRecent(r2, 'hour', hoursBefore(now, 24, 1));
     }
+
+    await generateAllSummaries(r2);
   },
 
-  // HTTP handler - health check and manual triggers
+  // HTTP handler: health check and authenticated manual triggers.
   async fetch(
     request: Request,
     env: Env,
@@ -1004,31 +1061,41 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/health') {
-      return new Response(
-        JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }),
-        { headers: { 'Content-Type': 'application/json' } }
-      );
+      return json({ status: 'ok', timestamp: new Date().toISOString() });
     }
 
-    // Manual trigger for summary generation
+    // POST /aggregate?level=day&date=2026-11-21 — roll up one completed
+    // period if it has no rollup yet, then regenerate the summaries.
+    if (url.pathname === '/aggregate') {
+      const denied = await authorize(request, env);
+      if (denied) return denied;
+      const level = url.searchParams.get('level') as RollupLevel | null;
+      const value = url.searchParams.get('date') ?? '';
+      if (level !== 'hour' && level !== 'day' && level !== 'month') {
+        return json({ status: 'error', message: 'level must be hour, day, or month' }, 400);
+      }
+      const date = parseCompletedPeriod(level, value, new Date());
+      if (!date) {
+        return json({ status: 'error', message: 'date must be a completed UTC period: YYYY-MM-DDTHH, YYYY-MM-DD, or YYYY-MM' }, 400);
+      }
+      const r2 = retryingBucket(env.R2);
+      const outcome = await ensureRollup(r2, level, date);
+      if (outcome === 'created') await generateAllSummaries(r2);
+      const status = outcome === 'failed' ? 500 : outcome === 'created' ? 201 : 200;
+      return json({ status: outcome === 'failed' ? 'error' : 'ok', level, date: value, outcome }, status);
+    }
+
     if (url.pathname === '/generate-summaries') {
+      const denied = await authorize(request, env);
+      if (denied) return denied;
       try {
-        await generateAllSummaries(env.R2);
-        return new Response(
-          JSON.stringify({ status: 'ok', message: 'Summaries generated successfully' }),
-          { headers: { 'Content-Type': 'application/json' } }
-        );
+        await generateAllSummaries(retryingBucket(env.R2));
+        return json({ status: 'ok', message: 'Summaries generated successfully' });
       } catch (error) {
-        return new Response(
-          JSON.stringify({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error' }),
-          { status: 500, headers: { 'Content-Type': 'application/json' } }
-        );
+        return json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error' }, 500);
       }
     }
 
-    return new Response(
-      JSON.stringify({ service: 'pota-aggregator', status: 'ok', endpoints: ['/health', '/generate-summaries'] }),
-      { headers: { 'Content-Type': 'application/json' } }
-    );
+    return json({ service: 'pota-aggregator', status: 'ok', endpoints: ['/health', 'POST /aggregate', 'POST /generate-summaries'] });
   },
 };

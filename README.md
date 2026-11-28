@@ -84,12 +84,29 @@ Scheduled aggregation worker:
 - **Daily** (`00:15 UTC`): Rolls up hourly data into daily summaries
 - **Monthly** (`00:30 UTC on 1st`): Rolls up daily data into monthly summaries
 
-### pota-web
+Each run also repairs recent gaps: the hourly run rolls up any hour in the
+past 24 hours, and the daily run any day in the past 7 days, that has source
+files but no rollup. The daily run also rolls up last month if it is missing.
+A period that already has a rollup is never rolled up again, because readers
+merge every file under a prefix and would count it twice.
 
-Route-facing worker for `https://w0arr.com/pota-stats/`. It renders the branded
-HTML dashboard, serves the bundled browser charts, proxies summary JSON from R2
-under `/pota-stats/api/summaries/`, and owns the POTA-specific sitemap and
-`llms.txt`.
+All R2 calls in the collector and aggregator retry transient errors (such as
+`internal error (10001)`) with backoff. Neither worker deletes objects.
+
+Manual endpoints need `POST` and `Authorization: Bearer $ADMIN_TOKEN`
+(`wrangler secret put ADMIN_TOKEN`):
+
+```bash
+# Roll up one completed UTC period if it has no rollup yet
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "https://pota-aggregator.<subdomain>.workers.dev/aggregate?level=day&date=2026-11-21"
+
+# Regenerate the summary files
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "https://pota-aggregator.<subdomain>.workers.dev/generate-summaries"
+```
+
+`level` is `hour` (`YYYY-MM-DDTHH`), `day` (`YYYY-MM-DD`), or `month` (`YYYY-MM`).
 
 ## Usage
 

@@ -1,4 +1,5 @@
 import { Result, ok, err } from 'neverthrow';
+import { retryingBucket } from '@pota-stats/shared/r2-retry';
 // @ts-expect-error - Local ESM build of coord2state
 import { getState } from './coord2state.js';
 
@@ -190,7 +191,8 @@ async function collectSpots(env: Env): Promise<Result<{ key: string; count: numb
   const spots = fetchResult.value;
   const normalizedSpots = normalizeSpots(spots, timestamp);
 
-  return storeSpots(env.R2, normalizedSpots, now);
+  // R2 sometimes fails a put with an internal error; retry so the minute is not lost.
+  return storeSpots(retryingBucket(env.R2), normalizedSpots, now);
 }
 
 export default {
